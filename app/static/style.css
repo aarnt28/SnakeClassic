@@ -114,6 +114,96 @@ body.game-active .hud {
   text-shadow: 0 0 12px rgba(110, 245, 255, 0.6);
 }
 
+.game-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1.25rem;
+}
+
+.settings-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 160px;
+}
+
+.field-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: rgba(239, 243, 255, 0.6);
+}
+
+.settings-panel select,
+.settings-panel input[type='range'] {
+  appearance: none;
+  background: rgba(12, 18, 28, 0.75);
+  border: 1px solid rgba(110, 245, 255, 0.35);
+  color: #eff3ff;
+  border-radius: 999px;
+  padding: 0.55rem 1rem;
+  font-family: inherit;
+  font-size: 0.95rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+.settings-panel select {
+  padding-right: 2.5rem;
+  background-image: linear-gradient(45deg, transparent 50%, rgba(110, 245, 255, 0.65) 50%),
+    linear-gradient(135deg, rgba(110, 245, 255, 0.65) 50%, transparent 50%);
+  background-position: calc(100% - 1.4rem) calc(1.2rem), calc(100% - 0.9rem) calc(1.2rem);
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+}
+
+.settings-panel input[type='range'] {
+  width: clamp(160px, 14vw, 220px);
+  padding: 0;
+  height: 0.45rem;
+  border-radius: 999px;
+}
+
+.settings-panel input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(120deg, rgba(110, 245, 255, 0.95), rgba(112, 255, 119, 0.95));
+  box-shadow: 0 0 0 3px rgba(12, 18, 28, 0.85);
+  cursor: pointer;
+  border: none;
+}
+
+.settings-panel input[type='range']::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(120deg, rgba(110, 245, 255, 0.95), rgba(112, 255, 119, 0.95));
+  box-shadow: 0 0 0 3px rgba(12, 18, 28, 0.85);
+  cursor: pointer;
+  border: none;
+}
+
+.settings-panel input[type='range']::-webkit-slider-runnable-track {
+  height: 0.45rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(110, 245, 255, 0.25), rgba(255, 110, 196, 0.35));
+}
+
+.settings-panel input[type='range']::-moz-range-track {
+  height: 0.45rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(110, 245, 255, 0.25), rgba(255, 110, 196, 0.35));
+}
+
 .controls {
   display: flex;
   gap: 0.75rem;
@@ -256,6 +346,26 @@ kbd {
   .scoreboard {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .game-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .settings-panel {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .field {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .settings-panel select,
+  .settings-panel input[type='range'] {
+    width: 100%;
   }
 
   .metric .value {

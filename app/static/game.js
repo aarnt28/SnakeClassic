@@ -4,6 +4,9 @@ const scoreValue = document.getElementById('score-value');
 const highScoreValue = document.getElementById('high-score-value');
 const startButton = document.getElementById('start-button');
 const pauseButton = document.getElementById('pause-button');
+const modeSelect = document.getElementById('mode-select');
+const speedInput = document.getElementById('speed-input');
+const speedLabel = document.getElementById('speed-label');
 const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlayMessage = document.getElementById('overlay-message');
@@ -11,7 +14,11 @@ const overlayButton = document.getElementById('overlay-button');
 
 const CELL_SIZE = 32;
 const GRID_SIZE = canvas.width / CELL_SIZE;
-const START_SPEED = 120;
+const MIN_SPEED_INTERVAL = 55;
+const MAX_SPEED_INTERVAL = 220;
+const SPEED_LEVEL_MIN = 1;
+const SPEED_LEVEL_MAX = 10;
+const SPEED_ACCELERATION = 2.5;
 const isTouchDevice =
   'ontouchstart' in window || navigator.maxTouchPoints > 0 || navigator.msMaxTouchPoints > 0;
 
@@ -24,6 +31,11 @@ const directions = {
   KeyS: { x: 0, y: 1 },
   KeyA: { x: -1, y: 0 },
   KeyD: { x: 1, y: 0 },
+};
+
+const settings = {
+  mode: modeSelect.value,
+  speedLevel: Number(speedInput.value),
 };
 
 let state = createInitialState();
@@ -66,8 +78,36 @@ function attemptFullscreen() {
   }
 }
 
+function levelToInterval(level) {
+  const clamped = Math.min(Math.max(level, SPEED_LEVEL_MIN), SPEED_LEVEL_MAX);
+  const ratio =
+    SPEED_LEVEL_MAX === SPEED_LEVEL_MIN
+      ? 0
+      : (clamped - SPEED_LEVEL_MIN) / (SPEED_LEVEL_MAX - SPEED_LEVEL_MIN);
+  const interval = Math.round(
+    MAX_SPEED_INTERVAL - ratio * (MAX_SPEED_INTERVAL - MIN_SPEED_INTERVAL),
+  );
+  return Math.max(MIN_SPEED_INTERVAL, Math.min(MAX_SPEED_INTERVAL, interval));
+}
+
+function updateSpeedLabel() {
+  const interval = levelToInterval(settings.speedLevel);
+  const descriptor = settings.mode === 'constant' ? 'Constant speed' : 'Starting speed';
+  speedLabel.textContent = `${descriptor}: Level ${settings.speedLevel} (${interval} ms / move)`;
+}
+
+function applySettingsToState() {
+  const interval = levelToInterval(settings.speedLevel);
+  state.mode = settings.mode;
+  if (!state.running || state.mode === 'constant') {
+    state.baseSpeed = interval;
+    state.speed = interval;
+  }
+}
+
 function createInitialState() {
   const center = Math.floor(GRID_SIZE / 2);
+  const baseSpeed = levelToInterval(settings.speedLevel);
   return {
     snake: [
       { x: center + 1, y: center },
@@ -78,7 +118,9 @@ function createInitialState() {
     nextDirection: { x: 1, y: 0 },
     food: spawnFood([{ x: center + 1, y: center }, { x: center, y: center }, { x: center - 1, y: center }]),
     score: 0,
-    speed: START_SPEED,
+    speed: baseSpeed,
+    baseSpeed,
+    mode: settings.mode,
     running: false,
   };
 }
@@ -110,7 +152,7 @@ function resetGame({ keepExpandedLayout = false } = {}) {
   draw();
   showOverlay(
     'Press Start',
-    'Use the arrow keys, WASD, or swipe on mobile to guide the snake. On phones, allow fullscreen for the smoothest controls.',
+    'Choose a speed mode above, then use the arrow keys, WASD, or swipe on mobile to guide the snake. On phones, allow fullscreen for the smoothest controls.',
     'Play',
   );
 }
@@ -195,7 +237,11 @@ function step() {
   if (newHead.x === state.food.x && newHead.y === state.food.y) {
     state.score += 10;
     state.food = spawnFood(state.snake);
-    state.speed = Math.max(55, state.speed - 2.5);
+    if (state.mode === 'progressive') {
+      state.speed = Math.max(MIN_SPEED_INTERVAL, state.speed - SPEED_ACCELERATION);
+    } else {
+      state.speed = state.baseSpeed;
+    }
     pulseBoard();
   } else {
     state.snake.pop();
@@ -418,6 +464,16 @@ function registerTouchControls() {
 
 startButton.addEventListener('click', startGame);
 pauseButton.addEventListener('click', pauseGame);
+modeSelect.addEventListener('change', () => {
+  settings.mode = modeSelect.value;
+  updateSpeedLabel();
+  applySettingsToState();
+});
+speedInput.addEventListener('input', () => {
+  settings.speedLevel = Number(speedInput.value);
+  updateSpeedLabel();
+  applySettingsToState();
+});
 overlayButton.addEventListener('click', () => {
   if (!state.running) {
     resetGame({ keepExpandedLayout: true });
@@ -430,6 +486,7 @@ overlayButton.addEventListener('click', () => {
 document.addEventListener('keydown', handleKeyDown);
 registerTouchControls();
 resetGame();
+updateSpeedLabel();
 
 // Visual pulse when eating food
 const style = document.createElement('style');

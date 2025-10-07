@@ -26,9 +26,32 @@
             <span id="high-score-value" class="value">0</span>
           </div>
         </div>
-        <div class="controls">
-          <button id="start-button" class="btn primary">Start</button>
-          <button id="pause-button" class="btn">Pause</button>
+        <div class="game-controls">
+          <div class="settings-panel" aria-label="Speed settings">
+            <label class="field">
+              <span class="field-label">Mode</span>
+              <select id="mode-select">
+                <option value="constant">Constant</option>
+                <option value="progressive" selected>Progressive</option>
+              </select>
+            </label>
+            <label class="field range-field">
+              <span class="field-label" id="speed-label">Starting speed</span>
+              <input
+                id="speed-input"
+                type="range"
+                min="1"
+                max="10"
+                step="1"
+                value="5"
+                aria-describedby="speed-label"
+              />
+            </label>
+          </div>
+          <div class="controls">
+            <button id="start-button" class="btn primary">Start</button>
+            <button id="pause-button" class="btn">Pause</button>
+          </div>
         </div>
       </header>
 
