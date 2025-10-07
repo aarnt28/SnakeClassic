@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Snake Classic</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="background-layer"></div>
+    <main class="app-shell">
+      <header class="hud">
+        <div class="scoreboard">
+          <div class="metric">
+            <span class="label">Score</span>
+            <span id="score-value" class="value">0</span>
+          </div>
+          <div class="metric">
+            <span class="label">High Score</span>
+            <span id="high-score-value" class="value">0</span>
+          </div>
+        </div>
+        <div class="controls">
+          <button id="start-button" class="btn primary">Start</button>
+          <button id="pause-button" class="btn">Pause</button>
+        </div>
+      </header>
+
+      <section class="board-wrapper">
+        <canvas id="game-board" width="640" height="640" aria-label="Snake game board"></canvas>
+        <div id="overlay" class="overlay hidden" role="alert" aria-live="assertive">
+          <div class="card">
+            <h2 id="overlay-title">Press Start</h2>
+            <p id="overlay-message">
+              Use the arrow keys, WASD, or swipe on mobile to guide the snake.
+            </p>
+            <button id="overlay-button" class="btn primary">Play</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="info-panel">
+        <h2>How to Play</h2>
+        <ul>
+          <li>Eat the neon fruit to grow your snake and earn points.</li>
+          <li>Avoid colliding with the walls or your own tail.</li>
+          <li>Use the pause button or press <kbd>Space</kbd> to pause or resume.</li>
+        </ul>
+      </section>
+    </main>
+    <script type="module" src="/static/game.js"></script>
+  </body>
+</html>
