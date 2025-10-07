@@ -12,6 +12,8 @@ const overlayButton = document.getElementById('overlay-button');
 const CELL_SIZE = 32;
 const GRID_SIZE = canvas.width / CELL_SIZE;
 const START_SPEED = 120;
+const isTouchDevice =
+  'ontouchstart' in window || navigator.maxTouchPoints > 0 || navigator.msMaxTouchPoints > 0;
 
 const directions = {
   ArrowUp: { x: 0, y: -1 },
@@ -33,6 +35,36 @@ let paused = false;
 let touchStart = null;
 
 highScoreValue.textContent = highScore.toString();
+
+function attemptFullscreen() {
+  if (!isTouchDevice) {
+    return;
+  }
+
+  if (document.fullscreenElement) {
+    return;
+  }
+
+  const element = document.documentElement;
+  const requestFullscreen =
+    element.requestFullscreen ||
+    element.webkitRequestFullscreen ||
+    element.mozRequestFullScreen ||
+    element.msRequestFullscreen;
+
+  if (typeof requestFullscreen !== 'function') {
+    return;
+  }
+
+  try {
+    const result = requestFullscreen.call(element);
+    if (result instanceof Promise) {
+      result.catch(() => {});
+    }
+  } catch (error) {
+    // Ignore failures — browsers may block the request if the user dismisses it.
+  }
+}
 
 function createInitialState() {
   const center = Math.floor(GRID_SIZE / 2);
@@ -73,7 +105,11 @@ function resetGame() {
   state = createInitialState();
   updateScoreboard();
   draw();
-  showOverlay('Press Start', 'Use the arrow keys, WASD, or swipe on mobile to guide the snake.', 'Play');
+  showOverlay(
+    'Press Start',
+    'Use the arrow keys, WASD, or swipe on mobile to guide the snake. On phones, allow fullscreen for the smoothest controls.',
+    'Play',
+  );
 }
 
 function updateScoreboard() {
@@ -82,6 +118,7 @@ function updateScoreboard() {
 }
 
 function startGame() {
+  attemptFullscreen();
   if (state.running) {
     return;
   }
@@ -320,16 +357,23 @@ function registerTouchControls() {
   canvas.addEventListener(
     'touchstart',
     (event) => {
+      if (event.touches.length === 0) {
+        return;
+      }
+      event.preventDefault();
       const touch = event.touches[0];
       touchStart = { x: touch.clientX, y: touch.clientY };
     },
-    { passive: true },
+    { passive: false },
   );
 
   canvas.addEventListener(
     'touchmove',
     (event) => {
-      if (!touchStart) return;
+      if (!touchStart) {
+        return;
+      }
+      event.preventDefault();
       const touch = event.touches[0];
       const dx = touch.clientX - touchStart.x;
       const dy = touch.clientY - touchStart.y;
@@ -346,15 +390,25 @@ function registerTouchControls() {
 
       touchStart = null;
     },
-    { passive: true },
+    { passive: false },
   );
 
   canvas.addEventListener(
     'touchend',
-    () => {
+    (event) => {
+      event.preventDefault();
       touchStart = null;
     },
-    { passive: true },
+    { passive: false },
+  );
+
+  canvas.addEventListener(
+    'touchcancel',
+    (event) => {
+      event.preventDefault();
+      touchStart = null;
+    },
+    { passive: false },
   );
 }
 
