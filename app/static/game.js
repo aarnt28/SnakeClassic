@@ -182,6 +182,9 @@ function step() {
     y: state.snake[0].y + state.direction.y,
   };
 
+  newHead.x = (newHead.x + GRID_SIZE) % GRID_SIZE;
+  newHead.y = (newHead.y + GRID_SIZE) % GRID_SIZE;
+
   if (isCollision(newHead)) {
     endGame();
     return;
@@ -202,9 +205,6 @@ function step() {
 }
 
 function isCollision(position) {
-  if (position.x < 0 || position.y < 0 || position.x >= GRID_SIZE || position.y >= GRID_SIZE) {
-    return true;
-  }
   return state.snake.some((segment) => segment.x === position.x && segment.y === position.y);
 }
 
