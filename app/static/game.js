@@ -19,6 +19,28 @@ const MAX_SPEED_INTERVAL = 220;
 const SPEED_LEVEL_MIN = 1;
 const SPEED_LEVEL_MAX = 10;
 const SPEED_ACCELERATION = 2.5;
+const BONUS_SPAWN_CHANCE = 0.35;
+const BONUS_MIN_GAP_STEPS = 8;
+const BONUS_DURATION_STEPS = 18;
+const BONUS_INITIAL_COOLDOWN = 6;
+const BONUS_TYPES = [
+  {
+    kind: 'points',
+    score: 30,
+    colors: ['rgba(255, 215, 99, 0.95)', 'rgba(255, 111, 97, 0.95)'],
+    glow: 'rgba(255, 183, 0, 0.65)',
+    outline: 'rgba(255, 245, 224, 0.8)',
+    label: '★',
+  },
+  {
+    kind: 'growth',
+    growth: 3,
+    colors: ['rgba(110, 245, 255, 0.95)', 'rgba(186, 110, 255, 0.95)'],
+    glow: 'rgba(186, 110, 255, 0.55)',
+    outline: 'rgba(230, 215, 255, 0.75)',
+    label: '⇑',
+  },
+];
 const isTouchDevice =
   'ontouchstart' in window || navigator.maxTouchPoints > 0 || navigator.msMaxTouchPoints > 0;
 
@@ -116,7 +138,16 @@ function createInitialState() {
     ],
     direction: { x: 1, y: 0 },
     nextDirection: { x: 1, y: 0 },
-    food: spawnFood([{ x: center + 1, y: center }, { x: center, y: center }, { x: center - 1, y: center }]),
+    food: spawnFood(
+      [
+        { x: center + 1, y: center },
+        { x: center, y: center },
+        { x: center - 1, y: center },
+      ],
+    ),
+    bonus: null,
+    bonusTimer: BONUS_INITIAL_COOLDOWN,
+    pendingGrowth: 0,
     score: 0,
     speed: baseSpeed,
     baseSpeed,
@@ -125,22 +156,42 @@ function createInitialState() {
   };
 }
 
-function spawnFood(snake) {
+function spawnFood(snake, blocked = []) {
+  return findAvailableCell([...snake, ...blocked]) ?? { x: 0, y: 0 };
+}
+
+function findAvailableCell(occupied) {
   const available = [];
   for (let x = 0; x < GRID_SIZE; x += 1) {
     for (let y = 0; y < GRID_SIZE; y += 1) {
-      const occupied = snake.some((segment) => segment.x === x && segment.y === y);
-      if (!occupied) {
+      const cellOccupied = occupied.some(
+        (segment) => segment && segment.x === x && segment.y === y,
+      );
+      if (!cellOccupied) {
         available.push({ x, y });
       }
     }
   }
 
   if (available.length === 0) {
-    return { x: 0, y: 0 };
+    return null;
   }
 
   return available[Math.floor(Math.random() * available.length)];
+}
+
+function spawnBonus(occupied) {
+  const position = findAvailableCell(occupied);
+  if (!position) {
+    return null;
+  }
+
+  const type = BONUS_TYPES[Math.floor(Math.random() * BONUS_TYPES.length)];
+  return {
+    position,
+    type,
+    remainingSteps: BONUS_DURATION_STEPS,
+  };
 }
 
 function resetGame({ keepExpandedLayout = false } = {}) {
@@ -218,6 +269,29 @@ function gameLoop(timestamp) {
 }
 
 function step() {
+  if (state.bonus) {
+    state.bonus.remainingSteps -= 1;
+    if (state.bonus.remainingSteps <= 0) {
+      state.bonus = null;
+      state.bonusTimer = BONUS_MIN_GAP_STEPS;
+    }
+  } else {
+    if (state.bonusTimer > 0) {
+      state.bonusTimer -= 1;
+    }
+    if (!state.bonus && state.bonusTimer <= 0) {
+      const shouldSpawn = Math.random() < BONUS_SPAWN_CHANCE;
+      const occupied = [...state.snake, state.food];
+      const bonus = shouldSpawn ? spawnBonus(occupied) : null;
+      if (bonus) {
+        state.bonus = bonus;
+        state.bonusTimer = BONUS_MIN_GAP_STEPS;
+      } else {
+        state.bonusTimer = BONUS_MIN_GAP_STEPS;
+      }
+    }
+  }
+
   state.direction = state.nextDirection;
   const newHead = {
     x: state.snake[0].x + state.direction.x,
@@ -236,13 +310,29 @@ function step() {
 
   if (newHead.x === state.food.x && newHead.y === state.food.y) {
     state.score += 10;
-    state.food = spawnFood(state.snake);
+    state.pendingGrowth += 1;
+    state.food = spawnFood(state.snake, state.bonus ? [state.bonus.position] : []);
     if (state.mode === 'progressive') {
       state.speed = Math.max(MIN_SPEED_INTERVAL, state.speed - SPEED_ACCELERATION);
     } else {
       state.speed = state.baseSpeed;
     }
     pulseBoard();
+  } else if (state.bonus && newHead.x === state.bonus.position.x && newHead.y === state.bonus.position.y) {
+    const { type } = state.bonus;
+    if (type.kind === 'points') {
+      state.score += type.score;
+    }
+    if (type.kind === 'growth') {
+      state.pendingGrowth += type.growth;
+      pulseBoard();
+    }
+    state.bonus = null;
+    state.bonusTimer = BONUS_MIN_GAP_STEPS;
+  }
+
+  if (state.pendingGrowth > 0) {
+    state.pendingGrowth -= 1;
   } else {
     state.snake.pop();
   }
@@ -258,6 +348,7 @@ function draw(interpolation = 0) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   drawGrid();
   drawFood();
+  drawBonus();
   drawSnake(interpolation);
 }
 
@@ -303,6 +394,45 @@ function drawFood() {
   ctx.fillStyle = gradient;
   pathRoundedRect(ctx, x, y, size, size, 6);
   ctx.fill();
+  ctx.restore();
+}
+
+function drawBonus() {
+  if (!state.bonus) {
+    return;
+  }
+
+  const { position, type } = state.bonus;
+  const basePadding = CELL_SIZE * 0.2;
+  const baseSize = CELL_SIZE - basePadding * 2;
+  const time = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const pulse = 1 + Math.sin(time / 220) * 0.08;
+  const size = baseSize * pulse;
+  const x = position.x * CELL_SIZE + (CELL_SIZE - size) / 2;
+  const y = position.y * CELL_SIZE + (CELL_SIZE - size) / 2;
+
+  const gradient = ctx.createLinearGradient(x, y, x + size, y + size);
+  gradient.addColorStop(0, type.colors[0]);
+  gradient.addColorStop(1, type.colors[1]);
+
+  ctx.save();
+  ctx.shadowBlur = 24;
+  ctx.shadowColor = type.glow;
+  ctx.fillStyle = gradient;
+  pathRoundedRect(ctx, x, y, size, size, 10);
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = type.outline;
+  pathRoundedRect(ctx, x, y, size, size, 10);
+  ctx.stroke();
+
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = 'rgba(5, 10, 16, 0.85)';
+  ctx.font = '600 18px "Inter", "Segoe UI", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(type.label, x + size / 2, y + size / 2 + 1);
+
   ctx.restore();
 }
 
