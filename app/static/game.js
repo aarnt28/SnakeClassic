@@ -101,7 +101,10 @@ function spawnFood(snake) {
   return available[Math.floor(Math.random() * available.length)];
 }
 
-function resetGame() {
+function resetGame({ keepExpandedLayout = false } = {}) {
+  if (!keepExpandedLayout) {
+    document.body.classList.remove('game-active');
+  }
   state = createInitialState();
   updateScoreboard();
   draw();
@@ -122,6 +125,7 @@ function startGame() {
   if (state.running) {
     return;
   }
+  document.body.classList.add('game-active');
   state.running = true;
   paused = false;
   overlay.classList.add('hidden');
@@ -416,7 +420,7 @@ startButton.addEventListener('click', startGame);
 pauseButton.addEventListener('click', pauseGame);
 overlayButton.addEventListener('click', () => {
   if (!state.running) {
-    resetGame();
+    resetGame({ keepExpandedLayout: true });
     startGame();
   } else {
     pauseGame();
