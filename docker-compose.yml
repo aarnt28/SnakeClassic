@@ -1,0 +1,14 @@
+services:
+  snakeclassic:
+    build: .
+    container_name: snakeclassic
+    restart: unless-stopped
+    ports:
+      - "6271:6271"
+    environment:
+      - UI_USERNAME=admin
+      - UI_PASSWORD=changeme
+      - TZ=America/Chicago
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
