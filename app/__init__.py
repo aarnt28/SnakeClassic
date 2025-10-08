@@ -21,7 +21,7 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 _index_html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
 
-store = LeaderboardStore(BASE_DIR / "data" / "leaderboard.json", limit=LEADERBOARD_LIMIT)
+store = LeaderboardStore(Path("/data") / "leaderboard.db", limit=LEADERBOARD_LIMIT)
 
 
 class LeaderboardEntryResponse(BaseModel):
