@@ -46,6 +46,7 @@ const SPEED_ACCELERATION = 2.5;
 const DEFAULT_BONUS_DURATION_STEPS = 32;
 const DEFAULT_BONUS_MIN_GAP_STEPS = 8;
 const DEFAULT_BONUS_INITIAL_COOLDOWN = 6;
+const BONUS_STREAK_INCREMENT = 0.1;
 const BONUS_TYPES = [
   {
     kind: 'points',
@@ -66,6 +67,35 @@ const BONUS_TYPES = [
 ];
 const isTouchDevice =
   'ontouchstart' in window || navigator.maxTouchPoints > 0 || navigator.msMaxTouchPoints > 0;
+
+function createBonusStreaks() {
+  const streaks = {};
+  BONUS_TYPES.forEach(({ kind }) => {
+    streaks[kind] = 0;
+  });
+  return streaks;
+}
+
+function incrementBonusStreak(streaks, kind) {
+  if (!streaks[kind] && streaks[kind] !== 0) {
+    streaks[kind] = 0;
+  }
+  streaks[kind] += 1;
+  return streaks[kind];
+}
+
+function resetBonusStreak(streaks, kind) {
+  if (Object.prototype.hasOwnProperty.call(streaks, kind)) {
+    streaks[kind] = 0;
+  }
+}
+
+function getBonusStreakMultiplier(streaks, kind) {
+  const streak = streaks && Object.prototype.hasOwnProperty.call(streaks, kind)
+    ? streaks[kind]
+    : 0;
+  return 1 + streak * BONUS_STREAK_INCREMENT;
+}
 
 const directions = {
   ArrowUp: { x: 0, y: -1 },
@@ -483,6 +513,9 @@ function applySettingsToState() {
   state.bonusMinGapSteps = config.bonusMinGapSteps ?? DEFAULT_BONUS_MIN_GAP_STEPS;
   state.bonusDurationSteps = config.bonusDurationSteps ?? DEFAULT_BONUS_DURATION_STEPS;
   state.bonusValueMultiplier = config.bonusValueMultiplier ?? 1;
+  if (!state.bonusStreaks) {
+    state.bonusStreaks = createBonusStreaks();
+  }
   state.obstacleBaseCount = config.obstacleCount ?? 0;
   state.obstacleCount = config.obstacleCount ?? 0;
   state.obstacleChangeInterval = config.obstacleChangeInterval ?? Infinity;
@@ -520,6 +553,7 @@ function createInitialState() {
     bonusChance: config.bonusChance,
     bonusMinGapSteps: config.bonusMinGapSteps ?? DEFAULT_BONUS_MIN_GAP_STEPS,
     bonusValueMultiplier: config.bonusValueMultiplier ?? 1,
+    bonusStreaks: createBonusStreaks(),
     pendingGrowth: 0,
     score: 0,
     speed: baseSpeed,
@@ -1090,8 +1124,10 @@ function step() {
   if (state.bonus) {
     state.bonus.remainingSteps -= 1;
     if (state.bonus.remainingSteps <= 0) {
+      const expiredType = state.bonus.type.kind;
       state.bonus = null;
       state.bonusTimer = state.bonusMinGapSteps;
+      resetBonusStreak(state.bonusStreaks, expiredType);
     }
   } else {
     if (state.bonusTimer > 0) {
@@ -1144,14 +1180,23 @@ function step() {
     maybeShuffleObstacles();
   } else if (state.bonus && newHead.x === state.bonus.position.x && newHead.y === state.bonus.position.y) {
     const { type } = state.bonus;
+    const streakMultiplier = getBonusStreakMultiplier(state.bonusStreaks, type.kind);
+    const difficultyMultiplier = state.bonusValueMultiplier ?? 1;
     if (type.kind === 'points') {
-      const bonusScore = Math.round(type.score * (state.bonusValueMultiplier ?? 1));
+      const baseScore = type.score * difficultyMultiplier;
+      const bonusScore = Math.round(baseScore * streakMultiplier);
       state.score += bonusScore;
     }
     if (type.kind === 'growth') {
       state.pendingGrowth += type.growth;
+      const baseGrowthPoints = type.growth * state.foodPoints;
+      if (baseGrowthPoints > 0) {
+        const growthScore = Math.round(baseGrowthPoints * streakMultiplier);
+        state.score += growthScore;
+      }
       pulseBoard();
     }
+    incrementBonusStreak(state.bonusStreaks, type.kind);
     state.bonus = null;
     state.bonusTimer = state.bonusMinGapSteps;
   }
@@ -1263,23 +1308,26 @@ function drawBonus() {
   const baseSize = cellSize - basePadding * 2;
   const time = typeof performance !== 'undefined' ? performance.now() : Date.now();
   const pulse = 1 + Math.sin(time / 220) * 0.08;
-  const size = baseSize * pulse;
-  const x = position.x * cellSize + (cellSize - size) / 2;
-  const y = position.y * cellSize + (cellSize - size) / 2;
+  const centerX = position.x * cellSize + cellSize / 2;
+  const centerY = position.y * cellSize + cellSize / 2;
+  const size = Math.max(0, baseSize * pulse);
+  const x = Math.round(centerX - size / 2);
+  const y = Math.round(centerY - size / 2);
 
   const gradient = ctx.createLinearGradient(x, y, x + size, y + size);
   gradient.addColorStop(0, type.colors[0]);
   gradient.addColorStop(1, type.colors[1]);
 
   ctx.save();
-  ctx.shadowBlur = 24;
+  ctx.shadowBlur = Math.min(28, Math.max(14, cellSize * 0.7));
   ctx.shadowColor = type.glow;
   ctx.fillStyle = gradient;
-  pathRoundedRect(ctx, x, y, size, size, 10);
+  const radius = Math.min(12, Math.max(8, cellSize * 0.3));
+  pathRoundedRect(ctx, x, y, size, size, radius);
   ctx.fill();
   ctx.lineWidth = 2;
   ctx.strokeStyle = type.outline;
-  pathRoundedRect(ctx, x, y, size, size, 10);
+  pathRoundedRect(ctx, x, y, size, size, radius);
   ctx.stroke();
 
   ctx.shadowBlur = 0;
