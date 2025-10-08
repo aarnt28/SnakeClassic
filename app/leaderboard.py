@@ -70,9 +70,17 @@ class LeaderboardStore:
         self._path.touch(exist_ok=True)
         self._initialize_database()
 
-    async def get_entries(self) -> List[dict]:
+    async def get_entries(
+        self, *, difficulty: str | None = None, limit: int | None = None
+    ) -> List[dict]:
+        """Return leaderboard rows, optionally filtered by difficulty."""
+
+        difficulty_filter = ensure_difficulty(difficulty) if difficulty else None
+        requested_limit = limit if limit is not None else self._limit
         async with self._lock:
-            rows = await asyncio.to_thread(self._fetch_rows, self._limit)
+            rows = await asyncio.to_thread(
+                self._fetch_rows, requested_limit, difficulty_filter
+            )
         return [self._row_to_dict(row) for row in rows]
 
     async def submit(
@@ -87,10 +95,14 @@ class LeaderboardStore:
 
         async with self._lock:
             row_id = await asyncio.to_thread(self._insert_record, record)
-            all_rows = await asyncio.to_thread(self._fetch_rows, None)
+            all_rows = await asyncio.to_thread(
+                self._fetch_rows, None, record.difficulty
+            )
             rank = self._rank_of_rows(all_rows, row_id)
             await asyncio.to_thread(self._trim_to_limit)
-            limited_rows = all_rows[: self._limit]
+            limited_rows = await asyncio.to_thread(
+                self._fetch_rows, self._limit, record.difficulty
+            )
 
         entry_row = next((row for row in all_rows if row["id"] == row_id), None)
         entry_dict = (
@@ -120,18 +132,24 @@ class LeaderboardStore:
                 """
             )
 
-    def _fetch_rows(self, limit: int | None) -> List[sqlite3.Row]:
+    def _fetch_rows(
+        self, limit: int | None, difficulty: str | None = None
+    ) -> List[sqlite3.Row]:
         with sqlite3.connect(self._path) as connection:
             connection.row_factory = sqlite3.Row
             query = (
                 "SELECT id, name, score, difficulty, submitted_at "
-                "FROM leaderboard ORDER BY score DESC, submitted_at ASC, id ASC"
+                "FROM leaderboard"
             )
+            params: tuple = ()
+            if difficulty:
+                query += " WHERE difficulty = ?"
+                params += (difficulty,)
+            query += " ORDER BY score DESC, submitted_at ASC, id ASC"
             if limit is not None:
                 query += " LIMIT ?"
-                cursor = connection.execute(query, (limit,))
-            else:
-                cursor = connection.execute(query)
+                params += (limit,)
+            cursor = connection.execute(query, params)
             return cursor.fetchall()
 
     def _insert_record(self, record: LeaderboardRecord) -> int:
@@ -153,17 +171,19 @@ class LeaderboardStore:
 
     def _trim_to_limit(self) -> None:
         with sqlite3.connect(self._path) as connection:
-            connection.execute(
-                """
-                DELETE FROM leaderboard
-                WHERE id NOT IN (
-                    SELECT id FROM leaderboard
-                    ORDER BY score DESC, submitted_at ASC, id ASC
-                    LIMIT ?
+            for difficulty in sorted(ALLOWED_DIFFICULTIES):
+                connection.execute(
+                    """
+                    DELETE FROM leaderboard
+                    WHERE difficulty = ? AND id NOT IN (
+                        SELECT id FROM leaderboard
+                        WHERE difficulty = ?
+                        ORDER BY score DESC, submitted_at ASC, id ASC
+                        LIMIT ?
+                    )
+                    """,
+                    (difficulty, difficulty, self._limit),
                 )
-                """,
-                (self._limit,),
-            )
             connection.commit()
 
     @staticmethod
