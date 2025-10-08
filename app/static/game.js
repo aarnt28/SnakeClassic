@@ -1,4 +1,5 @@
 const canvas = document.getElementById('game-board');
+const boardWrapper = document.querySelector('.board-wrapper');
 const ctx = canvas.getContext('2d');
 const scoreValue = document.getElementById('score-value');
 const highScoreValue = document.getElementById('high-score-value');
@@ -11,6 +12,9 @@ const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlayMessage = document.getElementById('overlay-message');
 const overlayButton = document.getElementById('overlay-button');
+const orientationGuard = document.getElementById('orientation-guard');
+const orientationGuardTitle = document.getElementById('orientation-guard-title');
+const orientationGuardMessage = document.getElementById('orientation-guard-message');
 const introLeaderboardList = document.getElementById('intro-leaderboard');
 const postgameLeaderboardList = document.getElementById('postgame-leaderboard');
 const settingsForm = document.getElementById('settings-form');
@@ -21,8 +25,19 @@ const introPanel = document.getElementById('intro-panel');
 const settingsPanel = document.getElementById('settings-panel');
 const postGamePanel = document.getElementById('postgame-panel');
 
-const CELL_SIZE = 32;
-const GRID_SIZE = canvas.width / CELL_SIZE;
+const BASE_CELL_SIZE = 32;
+const LEADERBOARD_CACHE_KEY = 'snake-leaderboard-cache';
+let cellSize = BASE_CELL_SIZE;
+let gridColumns = Math.max(12, Math.round(canvas.width / cellSize));
+let gridRows = Math.max(12, Math.round(canvas.height / cellSize));
+const ORIENTATIONS = { PORTRAIT: 'portrait', LANDSCAPE: 'landscape' };
+const deviceInfo = {
+  isIOS:
+    /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1),
+};
+deviceInfo.isIPhone = /iphone/i.test(navigator.userAgent);
+deviceInfo.isIPad = deviceInfo.isIOS && !deviceInfo.isIPhone;
 const MIN_SPEED_INTERVAL = 55;
 const MAX_SPEED_INTERVAL = 220;
 const SPEED_LEVEL_MIN = 1;
@@ -124,15 +139,16 @@ const UI_STATES = {
   POSTGAME: 'postgame',
 };
 
-const LEADERBOARD_STORAGE_KEY = 'snake-leaderboard';
 const LEGACY_HIGH_SCORE_KEY = 'snake-high-score';
 const PLAYER_NAME_STORAGE_KEY = 'snake-player-name';
 const LEADERBOARD_MAX_ENTRIES = 100;
 const LEADERBOARD_TOP_DISPLAY_COUNT = 10;
 
 let uiState = UI_STATES.INTRO;
-let leaderboard = loadLeaderboard();
-let state = createInitialState();
+let leaderboard = [];
+let state = null;
+let lockedOrientation = null;
+let orientationPauseActive = false;
 let animationFrameId = null;
 let lastFrameTime = 0;
 let accumulatedTime = 0;
@@ -172,6 +188,14 @@ function setUIState(next) {
     if (playerNameInput) {
       playerNameInput.focus();
     }
+  }
+
+  if (next === UI_STATES.RUNNING) {
+    enforceOrientationRules({ respectLock: true });
+  } else {
+    orientationPauseActive = false;
+    releaseOrientationLock();
+    enforceOrientationRules({ respectLock: false });
   }
 }
 
@@ -232,6 +256,224 @@ function updateDifficultyDescription() {
   }
 }
 
+function getOrientation() {
+  return window.innerHeight >= window.innerWidth
+    ? ORIENTATIONS.PORTRAIT
+    : ORIENTATIONS.LANDSCAPE;
+}
+
+function computeBoardGeometry() {
+  const viewportWidth = window.innerWidth || canvas.width;
+  const viewportHeight = window.innerHeight || canvas.height;
+  const orientation = getOrientation();
+  const isPortrait = orientation === ORIENTATIONS.PORTRAIT;
+
+  let horizontalPadding = isPortrait ? 48 : 96;
+  let verticalPadding = isPortrait ? 240 : 200;
+
+  if (deviceInfo.isIPhone) {
+    horizontalPadding = isPortrait ? 36 : 96;
+    verticalPadding = isPortrait ? 280 : 220;
+  } else if (deviceInfo.isIPad) {
+    horizontalPadding = isPortrait ? 64 : 96;
+    verticalPadding = isPortrait ? 220 : 200;
+  }
+
+  const maxWidth = Math.max(320, viewportWidth - horizontalPadding);
+  const maxHeight = Math.max(320, viewportHeight - verticalPadding);
+  const limitingDimension = Math.min(maxWidth, maxHeight);
+
+  let targetCellSize = BASE_CELL_SIZE;
+  if (limitingDimension < 420) {
+    targetCellSize = 24;
+  } else if (limitingDimension < 640) {
+    targetCellSize = 28;
+  } else if (limitingDimension > 920) {
+    targetCellSize = 40;
+  }
+
+  if (deviceInfo.isIPad) {
+    targetCellSize = Math.max(36, Math.min(48, Math.round(Math.min(maxWidth, maxHeight) / 22)));
+  } else if (deviceInfo.isIPhone) {
+    targetCellSize = limitingDimension < 420 ? 24 : 28;
+  }
+
+  let columns = Math.max(12, Math.floor(maxWidth / targetCellSize));
+  let rows = Math.max(12, Math.floor(maxHeight / targetCellSize));
+
+  if (deviceInfo.isIPad) {
+    if (isPortrait) {
+      columns = Math.max(columns, 24);
+      rows = Math.max(rows, 28);
+    } else {
+      columns = Math.max(columns, 30);
+      rows = Math.max(rows, 22);
+    }
+  } else if (!deviceInfo.isIPhone) {
+    if (isPortrait) {
+      rows = Math.max(rows, 22);
+    } else {
+      columns = Math.max(columns, 26);
+    }
+  }
+
+  columns = Math.min(columns, 48);
+  rows = Math.min(rows, 48);
+
+  return {
+    cellSize: targetCellSize,
+    columns,
+    rows,
+    width: columns * targetCellSize,
+    height: rows * targetCellSize,
+  };
+}
+
+function applyBoardGeometry(geometry) {
+  if (!geometry) {
+    return;
+  }
+  cellSize = geometry.cellSize;
+  gridColumns = geometry.columns;
+  gridRows = geometry.rows;
+  canvas.width = geometry.width;
+  canvas.height = geometry.height;
+  if (boardWrapper) {
+    boardWrapper.style.setProperty('--board-width', `${geometry.width}px`);
+    boardWrapper.style.setProperty('--board-height', `${geometry.height}px`);
+  }
+}
+
+function refreshBoardGeometry({ force = false, allowDuringGame = false } = {}) {
+  if (state && state.running && !allowDuringGame) {
+    return false;
+  }
+  const geometry = computeBoardGeometry();
+  const changed =
+    force ||
+    geometry.cellSize !== cellSize ||
+    geometry.columns !== gridColumns ||
+    geometry.rows !== gridRows;
+  if (changed) {
+    applyBoardGeometry(geometry);
+  }
+  return changed;
+}
+
+function getOrientationLabel(orientation) {
+  return orientation === ORIENTATIONS.LANDSCAPE ? 'landscape' : 'portrait';
+}
+
+function showOrientationGuard(title, message) {
+  if (!orientationGuard) {
+    return;
+  }
+  if (orientationGuardTitle) {
+    orientationGuardTitle.textContent = title;
+  }
+  if (orientationGuardMessage) {
+    orientationGuardMessage.textContent = message;
+  }
+  orientationGuard.classList.remove('hidden');
+}
+
+function hideOrientationGuard() {
+  if (!orientationGuard) {
+    return;
+  }
+  orientationGuard.classList.add('hidden');
+}
+
+function enforceOrientationRules({ respectLock = true } = {}) {
+  const orientation = getOrientation();
+  const iPhoneLandscapeBlocked = deviceInfo.isIPhone && orientation === ORIENTATIONS.LANDSCAPE;
+  const lockedMismatch = respectLock && lockedOrientation && orientation !== lockedOrientation;
+
+  if (startButton) {
+    startButton.disabled = iPhoneLandscapeBlocked;
+  }
+
+  if (iPhoneLandscapeBlocked) {
+    showOrientationGuard(
+      'Portrait Only',
+      'Snake Classic requires portrait orientation on iPhone. Rotate your device upright to play.',
+    );
+  } else if (lockedMismatch) {
+    showOrientationGuard(
+      'Orientation Locked',
+      `Rotate back to ${getOrientationLabel(lockedOrientation)} to keep playing.`,
+    );
+  } else {
+    hideOrientationGuard();
+  }
+
+  if (uiState === UI_STATES.RUNNING) {
+    if (iPhoneLandscapeBlocked || lockedMismatch) {
+      if (state && state.running) {
+        orientationPauseActive = true;
+        state.running = false;
+        cancelAnimationFrame(animationFrameId);
+      }
+      return false;
+    }
+
+    if (orientationPauseActive && state && !state.running) {
+      orientationPauseActive = false;
+      setTimeout(() => {
+        if (uiState === UI_STATES.RUNNING && state && !state.running) {
+          startGame();
+        }
+      }, 0);
+    }
+  }
+
+  return !iPhoneLandscapeBlocked;
+}
+
+function lockOrientationForGame() {
+  lockedOrientation = getOrientation();
+  if (screen.orientation && typeof screen.orientation.lock === 'function') {
+    const target = lockedOrientation === ORIENTATIONS.PORTRAIT ? 'portrait' : 'landscape';
+    try {
+      const result = screen.orientation.lock(target);
+      if (result && typeof result.catch === 'function') {
+        result.catch(() => {});
+      }
+    } catch (error) {
+      // Ignore lock failures.
+    }
+  }
+}
+
+function releaseOrientationLock() {
+  if (screen.orientation && typeof screen.orientation.unlock === 'function') {
+    try {
+      screen.orientation.unlock();
+    } catch (error) {
+      // Ignore unlock failures.
+    }
+  }
+  lockedOrientation = null;
+}
+
+function handleResize() {
+  const wasRunning = state && state.running;
+  const geometryChanged = refreshBoardGeometry({ allowDuringGame: false });
+  enforceOrientationRules({ respectLock: !wasRunning });
+  if (geometryChanged && state && !wasRunning) {
+    resetGame({ showIntroOverlay: false });
+  }
+}
+
+function handleOrientationChange() {
+  const wasRunning = state && state.running;
+  enforceOrientationRules({ respectLock: true });
+  const geometryChanged = refreshBoardGeometry({ allowDuringGame: false });
+  if (geometryChanged && state && !wasRunning) {
+    resetGame({ showIntroOverlay: false });
+  }
+}
+
 function applySettingsToState() {
   const config = getDifficultyConfig(settings.difficulty);
   const interval = levelToInterval(config.speedLevel);
@@ -253,12 +495,13 @@ function applySettingsToState() {
 
 function createInitialState() {
   const config = getDifficultyConfig(settings.difficulty);
-  const center = Math.floor(GRID_SIZE / 2);
+  const centerX = Math.floor(gridColumns / 2);
+  const centerY = Math.floor(gridRows / 2);
   const baseSpeed = levelToInterval(config.speedLevel);
   const snake = [
-    { x: center + 1, y: center },
-    { x: center, y: center },
-    { x: center - 1, y: center },
+    { x: (centerX + 1) % gridColumns, y: centerY % gridRows },
+    { x: centerX % gridColumns, y: centerY % gridRows },
+    { x: (centerX - 1 + gridColumns) % gridColumns, y: centerY % gridRows },
   ];
   const food = spawnFood(snake);
   const obstacles =
@@ -299,8 +542,8 @@ function spawnFood(snake, blocked = []) {
 
 function findAvailableCell(occupied) {
   const available = [];
-  for (let x = 0; x < GRID_SIZE; x += 1) {
-    for (let y = 0; y < GRID_SIZE; y += 1) {
+  for (let x = 0; x < gridColumns; x += 1) {
+    for (let y = 0; y < gridRows; y += 1) {
       const cellOccupied = occupied.some(
         (segment) => segment && segment.x === x && segment.y === y,
       );
@@ -373,6 +616,7 @@ function spawnBonus(occupied, currentState = state) {
 }
 
 function resetGame({ showIntroOverlay = false } = {}) {
+  refreshBoardGeometry({ allowDuringGame: true });
   state = createInitialState();
   applySettingsToState();
   paused = false;
@@ -397,15 +641,16 @@ function formatScore(value) {
 }
 
 function updateScoreboard() {
-  scoreValue.textContent = formatScore(state.score);
+  const currentScore = state ? state.score : 0;
+  scoreValue.textContent = formatScore(currentScore);
   const topScore = leaderboard[0];
   highScoreValue.textContent = topScore ? formatScore(topScore.score) : '0';
   renderIntroLeaderboard();
 }
 
-function saveLeaderboard() {
+function saveCachedLeaderboard(entries) {
   try {
-    localStorage.setItem(LEADERBOARD_STORAGE_KEY, JSON.stringify(leaderboard));
+    localStorage.setItem(LEADERBOARD_CACHE_KEY, JSON.stringify(entries));
   } catch (error) {
     // Ignore storage errors (e.g., Safari private mode).
   }
@@ -433,12 +678,31 @@ function normalizeLeaderboardEntry(entry) {
     name: sanitizeName(entry.name) || 'Anonymous',
     score: Math.max(0, Math.floor(score)),
     difficulty: ensureDifficulty(entry.difficulty),
+    submittedAt: typeof entry.submitted_at === 'string'
+      ? entry.submitted_at
+      : typeof entry.submittedAt === 'string'
+      ? entry.submittedAt
+      : null,
   };
 }
 
-function loadLeaderboard() {
+function isSameLeaderboardEntry(a, b) {
+  if (!a || !b) {
+    return false;
+  }
+  const sameBasics = a.name === b.name && a.score === b.score && a.difficulty === b.difficulty;
+  if (!sameBasics) {
+    return false;
+  }
+  if (a.submittedAt && b.submittedAt) {
+    return a.submittedAt === b.submittedAt;
+  }
+  return true;
+}
+
+function loadCachedLeaderboard() {
   try {
-    const stored = localStorage.getItem(LEADERBOARD_STORAGE_KEY);
+    const stored = localStorage.getItem(LEADERBOARD_CACHE_KEY);
     if (stored) {
       const parsed = JSON.parse(stored);
       if (Array.isArray(parsed)) {
@@ -462,11 +726,7 @@ function loadLeaderboard() {
         difficulty: 'easy',
       },
     ];
-    try {
-      localStorage.setItem(LEADERBOARD_STORAGE_KEY, JSON.stringify(legacyLeaderboard));
-    } catch (error) {
-      // Ignore storage errors.
-    }
+    saveCachedLeaderboard(legacyLeaderboard);
     return legacyLeaderboard;
   }
 
@@ -491,6 +751,91 @@ function persistPlayerName(name) {
   } catch (error) {
     // Ignore storage errors.
   }
+}
+
+async function refreshLeaderboardFromServer({ allowFallback = false } = {}) {
+  try {
+    const response = await fetch('/api/leaderboard?limit=100', {
+      headers: {
+        Accept: 'application/json',
+      },
+      cache: 'no-store',
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to load leaderboard: ${response.status}`);
+    }
+    const payload = await response.json();
+    if (!payload || !Array.isArray(payload.entries)) {
+      throw new Error('Malformed leaderboard response');
+    }
+    const normalized = payload.entries
+      .map(normalizeLeaderboardEntry)
+      .filter(Boolean)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, LEADERBOARD_MAX_ENTRIES);
+    leaderboard = normalized;
+    saveCachedLeaderboard(leaderboard);
+    if (state) {
+      updateScoreboard();
+    } else {
+      renderIntroLeaderboard();
+    }
+    return leaderboard;
+  } catch (error) {
+    console.error(error);
+    if (allowFallback && leaderboard.length === 0) {
+      const cached = loadCachedLeaderboard();
+      if (cached.length > 0) {
+        leaderboard = cached;
+        if (state) {
+          updateScoreboard();
+        } else {
+          renderIntroLeaderboard();
+        }
+      }
+    }
+    return leaderboard;
+  }
+}
+
+async function submitLeaderboardEntry(entry) {
+  const payload = {
+    name: entry.name,
+    score: entry.score,
+    difficulty: entry.difficulty,
+  };
+  const response = await fetch('/api/leaderboard', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to submit score: ${response.status}`);
+  }
+  const result = await response.json();
+  const normalizedEntries = Array.isArray(result.entries)
+    ? result.entries
+        .map(normalizeLeaderboardEntry)
+        .filter(Boolean)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, LEADERBOARD_MAX_ENTRIES)
+    : leaderboard;
+  if (normalizedEntries.length > 0) {
+    leaderboard = normalizedEntries;
+    saveCachedLeaderboard(leaderboard);
+    updateScoreboard();
+  }
+  const normalizedEntry = normalizeLeaderboardEntry(result.entry) || entry;
+  const rank = Number.isFinite(result.rank) ? Number(result.rank) : null;
+  renderIntroLeaderboard();
+  return {
+    entries: leaderboard,
+    entry: normalizedEntry,
+    rank,
+  };
 }
 
 function evaluateLeaderboardPlacement(entries, candidate) {
@@ -612,7 +957,8 @@ function renderPostGameLeaderboard(topEntries, currentEntry, rank) {
 
   topEntries.forEach((entry, index) => {
     const position = index + 1;
-    const highlight = currentEntry && rank === position && entry === currentEntry;
+    const highlight =
+      currentEntry && typeof rank === 'number' && rank === position && isSameLeaderboardEntry(entry, currentEntry);
     const item = createLeaderboardItem(entry, position, { highlight });
     postgameLeaderboardList.append(item);
     seenPositions.add(position);
@@ -624,11 +970,28 @@ function renderPostGameLeaderboard(topEntries, currentEntry, rank) {
   }
 }
 
+function buildGameOverMessage(score, rank, baseMessage = `You scored ${formatScore(score)} points.`) {
+  let message = baseMessage;
+  if (typeof rank === 'number') {
+    message += ` You're ranked #${rank}.`;
+  } else if (score > 0) {
+    message += ' Keep going to reach the leaderboard.';
+  } else {
+    message += ' Try grabbing some fruit to earn points!';
+  }
+  return message;
+}
+
 function startGame() {
   attemptFullscreen();
   if (state.running) {
     return;
   }
+  if (!enforceOrientationRules({ respectLock: false })) {
+    return;
+  }
+  lockOrientationForGame();
+  orientationPauseActive = false;
   state.running = true;
   paused = false;
   overlay.classList.add('hidden');
@@ -659,28 +1022,27 @@ function endGame() {
   state.running = false;
   cancelAnimationFrame(animationFrameId);
   updateScoreboard();
-  const scoreMessage = `You scored ${formatScore(state.score)} points.`;
+  const baseMessage = `You scored ${formatScore(state.score)} points.`;
 
   let placement = null;
   let currentEntry = null;
   let rank = null;
+  let candidate = null;
 
   if (state.score > 0) {
-    const entryCandidate = {
+    candidate = {
       name: sanitizeName(settings.playerName) || 'Anonymous',
       score: state.score,
       difficulty: state.difficulty,
     };
-    placement = evaluateLeaderboardPlacement(leaderboard, entryCandidate);
+    placement = evaluateLeaderboardPlacement(leaderboard, candidate);
     if (placement.qualifies) {
       leaderboard = placement.updated;
-      saveLeaderboard();
+      saveCachedLeaderboard(leaderboard);
     }
     rank = placement.rank;
     currentEntry = placement.candidateEntry;
   }
-
-  updateScoreboard();
 
   const sortedForDisplay = placement ? placement.sorted : leaderboard;
   const topEntries = sortedForDisplay.slice(0, 3);
@@ -688,16 +1050,26 @@ function endGame() {
 
   setUIState(UI_STATES.POSTGAME);
 
-  let message = scoreMessage;
-  if (typeof rank === 'number') {
-    message += ` You're ranked #${rank}.`;
-  } else if (state.score > 0) {
-    message += ' Keep going to reach the leaderboard.';
-  } else {
-    message += ' Try grabbing some fruit to earn points!';
-  }
+  const initialMessage = buildGameOverMessage(state.score, rank, baseMessage);
+  showOverlay('Game Over', initialMessage, 'Continue', { buttonAction: 'postgame' });
 
-  showOverlay('Game Over', message, 'Continue', { buttonAction: 'postgame' });
+  if (candidate) {
+    submitLeaderboardEntry(candidate)
+      .then((result) => {
+        if (!result) {
+          return;
+        }
+        const resolvedRank = typeof result.rank === 'number' ? result.rank : rank;
+        const resolvedEntry = result.entry || currentEntry || candidate;
+        const displayEntries = (result.entries || leaderboard).slice(0, 3);
+        renderPostGameLeaderboard(displayEntries, resolvedEntry, resolvedRank);
+        const updatedMessage = buildGameOverMessage(state.score, resolvedRank, baseMessage);
+        overlayMessage.textContent = updatedMessage;
+      })
+      .catch((error) => {
+        console.error(error);
+      });
+  }
 }
 
 function gameLoop(timestamp) {
@@ -744,8 +1116,8 @@ function step() {
     y: state.snake[0].y + state.direction.y,
   };
 
-  newHead.x = (newHead.x + GRID_SIZE) % GRID_SIZE;
-  newHead.y = (newHead.y + GRID_SIZE) % GRID_SIZE;
+  newHead.x = (newHead.x + gridColumns) % gridColumns;
+  newHead.y = (newHead.y + gridRows) % gridRows;
 
   if (isCollision(newHead)) {
     endGame();
@@ -819,13 +1191,15 @@ function drawGrid() {
   ctx.save();
   ctx.strokeStyle = 'rgba(239, 243, 255, 0.05)';
   ctx.lineWidth = 1;
-  for (let i = 1; i < GRID_SIZE; i += 1) {
-    const position = i * CELL_SIZE;
+  for (let x = 1; x < gridColumns; x += 1) {
+    const position = x * cellSize;
     ctx.beginPath();
     ctx.moveTo(position, 0);
     ctx.lineTo(position, canvas.height);
     ctx.stroke();
-
+  }
+  for (let y = 1; y < gridRows; y += 1) {
+    const position = y * cellSize;
     ctx.beginPath();
     ctx.moveTo(0, position);
     ctx.lineTo(canvas.width, position);
@@ -844,9 +1218,9 @@ function drawObstacles() {
   ctx.strokeStyle = 'rgba(255, 215, 99, 0.6)';
   ctx.lineWidth = 2;
   state.obstacles.forEach((obstacle) => {
-    const x = obstacle.x * CELL_SIZE + 4;
-    const y = obstacle.y * CELL_SIZE + 4;
-    const size = CELL_SIZE - 8;
+    const x = obstacle.x * cellSize + 4;
+    const y = obstacle.y * cellSize + 4;
+    const size = cellSize - 8;
     ctx.fillRect(x, y, size, size);
     ctx.strokeRect(x, y, size, size);
   });
@@ -854,10 +1228,10 @@ function drawObstacles() {
 }
 
 function drawFood() {
-  const padding = CELL_SIZE * 0.2;
-  const x = state.food.x * CELL_SIZE + padding;
-  const y = state.food.y * CELL_SIZE + padding;
-  const size = CELL_SIZE - padding * 2;
+  const padding = cellSize * 0.2;
+  const x = state.food.x * cellSize + padding;
+  const y = state.food.y * cellSize + padding;
+  const size = cellSize - padding * 2;
 
   const gradient = ctx.createRadialGradient(
     x + size / 2,
@@ -885,13 +1259,13 @@ function drawBonus() {
   }
 
   const { position, type } = state.bonus;
-  const basePadding = CELL_SIZE * 0.2;
-  const baseSize = CELL_SIZE - basePadding * 2;
+  const basePadding = cellSize * 0.2;
+  const baseSize = cellSize - basePadding * 2;
   const time = typeof performance !== 'undefined' ? performance.now() : Date.now();
   const pulse = 1 + Math.sin(time / 220) * 0.08;
   const size = baseSize * pulse;
-  const x = position.x * CELL_SIZE + (CELL_SIZE - size) / 2;
-  const y = position.y * CELL_SIZE + (CELL_SIZE - size) / 2;
+  const x = position.x * cellSize + (cellSize - size) / 2;
+  const y = position.y * cellSize + (cellSize - size) / 2;
 
   const gradient = ctx.createLinearGradient(x, y, x + size, y + size);
   gradient.addColorStop(0, type.colors[0]);
@@ -926,16 +1300,16 @@ function drawSnake(interpolation) {
   for (let i = state.snake.length - 1; i >= 0; i -= 1) {
     const segment = state.snake[i];
     const nextSegment = state.snake[i - 1];
-    let drawX = segment.x * CELL_SIZE;
-    let drawY = segment.y * CELL_SIZE;
+    let drawX = segment.x * cellSize;
+    let drawY = segment.y * cellSize;
 
     if (nextSegment && interpolation) {
-      drawX += (nextSegment.x - segment.x) * interpolation * CELL_SIZE * 0.25;
-      drawY += (nextSegment.y - segment.y) * interpolation * CELL_SIZE * 0.25;
+      drawX += (nextSegment.x - segment.x) * interpolation * cellSize * 0.25;
+      drawY += (nextSegment.y - segment.y) * interpolation * cellSize * 0.25;
     }
 
-    const padding = i === 0 ? CELL_SIZE * 0.15 : CELL_SIZE * 0.2;
-    const size = CELL_SIZE - padding * 2;
+    const padding = i === 0 ? cellSize * 0.15 : cellSize * 0.2;
+    const size = cellSize - padding * 2;
     const x = drawX + padding;
     const y = drawY + padding;
 
@@ -998,6 +1372,20 @@ function setNextDirection(candidate) {
 }
 
 function handleKeyDown(event) {
+  const target = event.target;
+  const tagName = target && target.tagName ? target.tagName.toUpperCase() : '';
+  const isEditable =
+    (target && target.isContentEditable) ||
+    tagName === 'INPUT' ||
+    tagName === 'TEXTAREA' ||
+    tagName === 'SELECT';
+
+  if (isEditable) {
+    return;
+  }
+
+  const isDirectional = Object.prototype.hasOwnProperty.call(directions, event.code);
+
   if (event.code === 'Space') {
     event.preventDefault();
     if (uiState === UI_STATES.RUNNING && state.running) {
@@ -1005,6 +1393,12 @@ function handleKeyDown(event) {
     }
     return;
   }
+
+  if (!isDirectional) {
+    return;
+  }
+
+  event.preventDefault();
 
   if (uiState !== UI_STATES.RUNNING) {
     return;
@@ -1167,12 +1561,25 @@ overlayButton.addEventListener('click', () => {
   overlay.classList.add('hidden');
 });
 
-document.addEventListener('keydown', handleKeyDown);
+document.addEventListener('keydown', handleKeyDown, { passive: false });
 registerTouchControls();
+
+window.addEventListener('resize', handleResize, { passive: true });
+if (screen.orientation && typeof screen.orientation.addEventListener === 'function') {
+  screen.orientation.addEventListener('change', handleOrientationChange);
+} else {
+  window.addEventListener('orientationchange', handleOrientationChange);
+}
+
+leaderboard = loadCachedLeaderboard();
+
+refreshBoardGeometry({ force: true, allowDuringGame: true });
 resetGame({ showIntroOverlay: false });
 setUIState(UI_STATES.INTRO);
-
+enforceOrientationRules({ respectLock: false });
 renderIntroLeaderboard();
+
+refreshLeaderboardFromServer({ allowFallback: leaderboard.length === 0 });
 
 // Visual pulse when eating food
 const style = document.createElement('style');
