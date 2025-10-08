@@ -9,6 +9,7 @@ services:
       - UI_USERNAME=admin
       - UI_PASSWORD=changeme
       - TZ=America/Chicago
+      - LEADERBOARD_DB_PATH=/app/data/leaderboard.db
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs

@@ -1,7 +1,12 @@
 FROM python:3.12-slim
 
 # Keep your original tzdata and timezone setup
-RUN apt-get update && apt-get install -y --no-install-recommends tzdata ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        tzdata \
+        ca-certificates \
+        sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
 ENV TZ=America/Chicago
 
 
@@ -12,7 +17,9 @@ WORKDIR /app
 #  - bcrypt (to verify UI_PASSWORD_HASH)
 RUN pip install --no-cache-dir \
     fastapi \
-    uvicorn[standard] 
+    uvicorn[standard]
+
+RUN mkdir -p /app/data /app/logs
 
 # Keep your original copy layout (copy the app/ dir into /app/app)
 COPY app /app/app

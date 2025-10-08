@@ -11,8 +11,13 @@ venv/
 *.log
 
 # DB / data (bind-mount/persistent volumes)
-/data/
+/data/*
+!/data/.gitkeep
 *.db
+
+# Log directories for docker bind mounts
+/logs/*
+!/logs/.gitkeep
 
 # Node / front-end builds (if any)
 node_modules/

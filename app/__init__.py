@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from typing import List
@@ -21,7 +22,9 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 _index_html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
 
-store = LeaderboardStore(Path("/data") / "leaderboard.db", limit=LEADERBOARD_LIMIT)
+default_db_path = Path("/app/data") / "leaderboard.db"
+db_path = Path(os.environ.get("LEADERBOARD_DB_PATH", str(default_db_path)))
+store = LeaderboardStore(db_path, limit=LEADERBOARD_LIMIT)
 
 
 class LeaderboardEntryResponse(BaseModel):
