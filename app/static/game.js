@@ -5,15 +5,21 @@ const highScoreValue = document.getElementById('high-score-value');
 const startButton = document.getElementById('start-button');
 const pauseButton = document.getElementById('pause-button');
 const modeSelect = document.getElementById('mode-select');
-const speedInput = document.getElementById('speed-input');
-const speedLabel = document.getElementById('speed-label');
+const difficultySelect = document.getElementById('difficulty-select');
+const playerNameInput = document.getElementById('player-name-input');
 const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlayMessage = document.getElementById('overlay-message');
 const overlayButton = document.getElementById('overlay-button');
-const leaderboardList = document.getElementById('leaderboard-list');
-const nameForm = document.getElementById('name-form');
-const nameInput = document.getElementById('name-input');
+const introLeaderboardList = document.getElementById('intro-leaderboard');
+const postgameLeaderboardList = document.getElementById('postgame-leaderboard');
+const settingsForm = document.getElementById('settings-form');
+const settingsBackButton = document.getElementById('settings-back-button');
+const playAgainButton = document.getElementById('play-again-button');
+const difficultyDescription = document.getElementById('difficulty-description');
+const introPanel = document.getElementById('intro-panel');
+const settingsPanel = document.getElementById('settings-panel');
+const postGamePanel = document.getElementById('postgame-panel');
 
 const CELL_SIZE = 32;
 const GRID_SIZE = canvas.width / CELL_SIZE;
@@ -22,10 +28,9 @@ const MAX_SPEED_INTERVAL = 220;
 const SPEED_LEVEL_MIN = 1;
 const SPEED_LEVEL_MAX = 10;
 const SPEED_ACCELERATION = 2.5;
-const BONUS_SPAWN_CHANCE = 0.35;
-const BONUS_MIN_GAP_STEPS = 8;
-const BONUS_DURATION_STEPS = 32;
-const BONUS_INITIAL_COOLDOWN = 6;
+const DEFAULT_BONUS_DURATION_STEPS = 32;
+const DEFAULT_BONUS_MIN_GAP_STEPS = 8;
+const DEFAULT_BONUS_INITIAL_COOLDOWN = 6;
 const BONUS_TYPES = [
   {
     kind: 'points',
@@ -58,14 +63,74 @@ const directions = {
   KeyD: { x: 1, y: 0 },
 };
 
+const DIFFICULTY_CONFIG = {
+  easy: {
+    label: 'Easy',
+    speedLevel: 3,
+    bonusChance: 0.65,
+    bonusMinGapSteps: 4,
+    bonusInitialCooldown: 3,
+    bonusDurationSteps: 40,
+    bonusValueMultiplier: 1,
+    obstacleCount: 0,
+    obstacleChangeInterval: Infinity,
+    basePoints: 10,
+  },
+  medium: {
+    label: 'Medium',
+    speedLevel: 6,
+    bonusChance: 0.38,
+    bonusMinGapSteps: 6,
+    bonusInitialCooldown: 5,
+    bonusDurationSteps: 36,
+    bonusValueMultiplier: 1.15,
+    obstacleCount: 4,
+    obstacleChangeInterval: 15,
+    basePoints: 25,
+  },
+  hard: {
+    label: 'Hard',
+    speedLevel: 9,
+    bonusChance: 0.38,
+    bonusMinGapSteps: 6,
+    bonusInitialCooldown: 5,
+    bonusDurationSteps: 30,
+    bonusValueMultiplier: 1.5,
+    obstacleCount: 12,
+    obstacleChangeInterval: 10,
+    basePoints: 30,
+  },
+};
+
+const DIFFICULTY_DESCRIPTIONS = {
+  easy:
+    'A relaxed pace: fruit is worth 10 points, bonuses drop often, and there are no obstacles in your way.',
+  medium:
+    'Balanced speed: fruit earns 25 points, bonuses arrive steadily, and a few obstacles reshuffle every 15 fruits.',
+  hard:
+    'High intensity: fruit pays 30 points, bonuses hit harder, and dense obstacle fields shift frequently.',
+};
+
 const settings = {
-  mode: modeSelect.value,
-  speedLevel: Number(speedInput.value),
+  mode: modeSelect ? modeSelect.value : 'progressive',
+  difficulty: difficultySelect ? difficultySelect.value : 'easy',
+  playerName: '',
+};
+
+const UI_STATES = {
+  INTRO: 'intro',
+  SETTINGS: 'settings',
+  RUNNING: 'running',
+  POSTGAME: 'postgame',
 };
 
 const LEADERBOARD_STORAGE_KEY = 'snake-leaderboard';
 const LEGACY_HIGH_SCORE_KEY = 'snake-high-score';
+const PLAYER_NAME_STORAGE_KEY = 'snake-player-name';
+const LEADERBOARD_MAX_ENTRIES = 100;
+const LEADERBOARD_TOP_DISPLAY_COUNT = 10;
 
+let uiState = UI_STATES.INTRO;
 let leaderboard = loadLeaderboard();
 let state = createInitialState();
 let animationFrameId = null;
@@ -73,7 +138,42 @@ let lastFrameTime = 0;
 let accumulatedTime = 0;
 let paused = false;
 let touchStart = null;
-let pendingLeaderboardEntry = null;
+
+settings.playerName = loadStoredPlayerName();
+if (playerNameInput) {
+  playerNameInput.value = settings.playerName;
+}
+if (difficultySelect) {
+  settings.difficulty = difficultySelect.value;
+}
+if (modeSelect) {
+  settings.mode = modeSelect.value;
+}
+updateDifficultyDescription();
+
+function setUIState(next) {
+  uiState = next;
+  document.body.dataset.uiState = next;
+  const shouldExpand = next === UI_STATES.RUNNING;
+  document.body.classList.toggle('game-active', shouldExpand);
+
+  if (introPanel) {
+    introPanel.classList.toggle('hidden', next !== UI_STATES.INTRO);
+  }
+  if (settingsPanel) {
+    settingsPanel.classList.toggle('hidden', next !== UI_STATES.SETTINGS);
+  }
+  if (postGamePanel) {
+    postGamePanel.classList.toggle('hidden', next !== UI_STATES.POSTGAME);
+  }
+
+  if (next === UI_STATES.SETTINGS) {
+    updateDifficultyDescription();
+    if (playerNameInput) {
+      playerNameInput.focus();
+    }
+  }
+}
 
 function attemptFullscreen() {
   if (!isTouchDevice) {
@@ -117,15 +217,35 @@ function levelToInterval(level) {
   return Math.max(MIN_SPEED_INTERVAL, Math.min(MAX_SPEED_INTERVAL, interval));
 }
 
-function updateSpeedLabel() {
-  const interval = levelToInterval(settings.speedLevel);
-  const descriptor = settings.mode === 'constant' ? 'Constant speed' : 'Starting speed';
-  speedLabel.textContent = `${descriptor}: Level ${settings.speedLevel} (${interval} ms / move)`;
+function applySettingsToState() {
+function getDifficultyConfig(difficulty) {
+  return DIFFICULTY_CONFIG[difficulty] || DIFFICULTY_CONFIG.easy;
+}
+
+function updateDifficultyDescription() {
+  if (!difficultyDescription) {
+    return;
+  }
+  const config = getDifficultyConfig(settings.difficulty);
+  difficultyDescription.textContent = DIFFICULTY_DESCRIPTIONS[settings.difficulty] || '';
+  if (difficultyDescription.dataset.speedInterval !== String(config.speedLevel)) {
+    difficultyDescription.dataset.speedInterval = String(config.speedLevel);
+  }
 }
 
 function applySettingsToState() {
-  const interval = levelToInterval(settings.speedLevel);
+  const config = getDifficultyConfig(settings.difficulty);
+  const interval = levelToInterval(config.speedLevel);
   state.mode = settings.mode;
+  state.difficulty = settings.difficulty;
+  state.bonusChance = config.bonusChance;
+  state.bonusMinGapSteps = config.bonusMinGapSteps ?? DEFAULT_BONUS_MIN_GAP_STEPS;
+  state.bonusDurationSteps = config.bonusDurationSteps ?? DEFAULT_BONUS_DURATION_STEPS;
+  state.bonusValueMultiplier = config.bonusValueMultiplier ?? 1;
+  state.obstacleBaseCount = config.obstacleCount ?? 0;
+  state.obstacleCount = config.obstacleCount ?? 0;
+  state.obstacleChangeInterval = config.obstacleChangeInterval ?? Infinity;
+  state.foodPoints = config.basePoints;
   if (!state.running || state.mode === 'constant') {
     state.baseSpeed = interval;
     state.speed = interval;
@@ -133,31 +253,44 @@ function applySettingsToState() {
 }
 
 function createInitialState() {
+  const config = getDifficultyConfig(settings.difficulty);
   const center = Math.floor(GRID_SIZE / 2);
-  const baseSpeed = levelToInterval(settings.speedLevel);
+  const baseSpeed = levelToInterval(config.speedLevel);
+  const snake = [
+    { x: center + 1, y: center },
+    { x: center, y: center },
+    { x: center - 1, y: center },
+  ];
+  const food = spawnFood(snake);
+  const obstacles =
+    config.obstacleCount > 0
+      ? generateObstacles(config.obstacleCount, [...snake, food])
+      : [];
+
   return {
-    snake: [
-      { x: center + 1, y: center },
-      { x: center, y: center },
-      { x: center - 1, y: center },
-    ],
+    snake,
     direction: { x: 1, y: 0 },
     nextDirection: { x: 1, y: 0 },
-    food: spawnFood(
-      [
-        { x: center + 1, y: center },
-        { x: center, y: center },
-        { x: center - 1, y: center },
-      ],
-    ),
+    food,
     bonus: null,
-    bonusTimer: BONUS_INITIAL_COOLDOWN,
+    bonusTimer: config.bonusInitialCooldown ?? DEFAULT_BONUS_INITIAL_COOLDOWN,
+    bonusDurationSteps: config.bonusDurationSteps ?? DEFAULT_BONUS_DURATION_STEPS,
+    bonusChance: config.bonusChance,
+    bonusMinGapSteps: config.bonusMinGapSteps ?? DEFAULT_BONUS_MIN_GAP_STEPS,
+    bonusValueMultiplier: config.bonusValueMultiplier ?? 1,
     pendingGrowth: 0,
     score: 0,
     speed: baseSpeed,
     baseSpeed,
     mode: settings.mode,
     running: false,
+    difficulty: settings.difficulty,
+    foodPoints: config.basePoints,
+    foodEaten: 0,
+    obstacles,
+    obstacleCount: config.obstacleCount ?? 0,
+    obstacleBaseCount: config.obstacleCount ?? 0,
+    obstacleChangeInterval: config.obstacleChangeInterval ?? Infinity,
   };
 }
 
@@ -185,7 +318,48 @@ function findAvailableCell(occupied) {
   return available[Math.floor(Math.random() * available.length)];
 }
 
-function spawnBonus(occupied) {
+function generateObstacles(count, blocked = []) {
+  const obstacles = [];
+  for (let i = 0; i < count; i += 1) {
+    const obstacle = findAvailableCell([...blocked, ...obstacles]);
+    if (!obstacle) {
+      break;
+    }
+    obstacles.push(obstacle);
+  }
+  return obstacles;
+}
+
+function maybeShuffleObstacles() {
+  if (!state.obstacleChangeInterval || !Number.isFinite(state.obstacleChangeInterval)) {
+    return;
+  }
+  if (state.obstacleChangeInterval <= 0) {
+    return;
+  }
+  if (state.foodEaten <= 0) {
+    return;
+  }
+  if (state.foodEaten % state.obstacleChangeInterval !== 0) {
+    return;
+  }
+
+  const config = getDifficultyConfig(state.difficulty);
+  let targetCount = config.obstacleCount ?? 0;
+  if (state.difficulty === 'hard') {
+    const increments = Math.floor(state.foodEaten / state.obstacleChangeInterval);
+    targetCount += Math.min(6, increments);
+  }
+
+  const blocked = [...state.snake, state.food];
+  if (state.bonus) {
+    blocked.push(state.bonus.position);
+  }
+  state.obstacles = generateObstacles(targetCount, blocked);
+  state.obstacleCount = targetCount;
+}
+
+function spawnBonus(occupied, currentState = state) {
   const position = findAvailableCell(occupied);
   if (!position) {
     return null;
@@ -195,69 +369,39 @@ function spawnBonus(occupied) {
   return {
     position,
     type,
-    remainingSteps: BONUS_DURATION_STEPS,
+    remainingSteps: currentState.bonusDurationSteps ?? DEFAULT_BONUS_DURATION_STEPS,
   };
 }
 
-function resetGame({ keepExpandedLayout = false } = {}) {
-  if (!keepExpandedLayout) {
-    document.body.classList.remove('game-active');
-  }
-  pendingLeaderboardEntry = null;
-  if (nameForm) {
-    nameForm.hidden = true;
-    nameForm.reset();
-  }
+function resetGame({ showIntroOverlay = false } = {}) {
   state = createInitialState();
+  applySettingsToState();
+  paused = false;
+  accumulatedTime = 0;
+  cancelAnimationFrame(animationFrameId);
   updateScoreboard();
   draw();
-  showOverlay(
-    'Press Start',
-    'Choose a speed mode above, then use the arrow keys, WASD, or swipe on mobile to guide the snake. On phones, allow fullscreen for the smoothest controls.',
-    'Play',
-    { buttonAction: 'restart' },
-  );
+  if (showIntroOverlay) {
+    showOverlay(
+      'Ready to Play?',
+      'Tap Start Game to configure your run. Use arrow keys, WASD, or swipe on mobile to guide the snake.',
+      'Got it',
+      { buttonAction: 'dismiss' },
+    );
+  } else {
+    overlay.classList.add('hidden');
+  }
 }
 
 function formatScore(value) {
   return Number.isFinite(value) ? Number(value).toLocaleString() : '0';
 }
 
-function renderLeaderboard() {
-  if (!leaderboardList) {
-    return;
-  }
-
-  leaderboardList.innerHTML = '';
-  for (let index = 0; index < 3; index += 1) {
-    const entry = leaderboard[index] ?? null;
-    const item = document.createElement('li');
-    item.className = 'leaderboard-item';
-
-    const position = document.createElement('span');
-    position.className = 'position';
-    position.textContent = `${index + 1}.`;
-    item.append(position);
-
-    const name = document.createElement('span');
-    name.className = 'name';
-    name.textContent = entry ? entry.name : '—';
-    item.append(name);
-
-    const score = document.createElement('span');
-    score.className = 'score';
-    score.textContent = entry ? formatScore(entry.score) : '—';
-    item.append(score);
-
-    leaderboardList.append(item);
-  }
-}
-
 function updateScoreboard() {
   scoreValue.textContent = formatScore(state.score);
   const topScore = leaderboard[0];
   highScoreValue.textContent = topScore ? formatScore(topScore.score) : '0';
-  renderLeaderboard();
+  renderIntroLeaderboard();
 }
 
 function saveLeaderboard() {
@@ -268,6 +412,31 @@ function saveLeaderboard() {
   }
 }
 
+function sanitizeName(value) {
+  return (typeof value === 'string' ? value : '').trim().slice(0, 24);
+}
+
+function ensureDifficulty(value) {
+  return Object.prototype.hasOwnProperty.call(DIFFICULTY_CONFIG, value)
+    ? value
+    : 'easy';
+}
+
+function normalizeLeaderboardEntry(entry) {
+  if (!entry) {
+    return null;
+  }
+  const score = Number(entry.score);
+  if (!Number.isFinite(score)) {
+    return null;
+  }
+  return {
+    name: sanitizeName(entry.name) || 'Anonymous',
+    score: Math.max(0, Math.floor(score)),
+    difficulty: ensureDifficulty(entry.difficulty),
+  };
+}
+
 function loadLeaderboard() {
   try {
     const stored = localStorage.getItem(LEADERBOARD_STORAGE_KEY);
@@ -275,15 +444,10 @@ function loadLeaderboard() {
       const parsed = JSON.parse(stored);
       if (Array.isArray(parsed)) {
         return parsed
-          .filter(
-            (entry) =>
-              entry &&
-              typeof entry.name === 'string' &&
-              Number.isFinite(Number(entry.score)),
-          )
-          .map((entry) => ({ name: entry.name, score: Number(entry.score) }))
+          .map(normalizeLeaderboardEntry)
+          .filter(Boolean)
           .sort((a, b) => b.score - a.score)
-          .slice(0, 3);
+          .slice(0, LEADERBOARD_MAX_ENTRIES);
       }
     }
   } catch (error) {
@@ -293,7 +457,11 @@ function loadLeaderboard() {
   const legacyScore = Number(localStorage.getItem(LEGACY_HIGH_SCORE_KEY) || '0');
   if (Number.isFinite(legacyScore) && legacyScore > 0) {
     const legacyLeaderboard = [
-      { name: 'Player', score: Math.floor(legacyScore) },
+      {
+        name: 'Player',
+        score: Math.floor(legacyScore),
+        difficulty: 'easy',
+      },
     ];
     try {
       localStorage.setItem(LEADERBOARD_STORAGE_KEY, JSON.stringify(legacyLeaderboard));
@@ -306,45 +474,155 @@ function loadLeaderboard() {
   return [];
 }
 
-function qualifiesForLeaderboard(score) {
-  if (score <= 0) {
-    return false;
+function loadStoredPlayerName() {
+  try {
+    const stored = localStorage.getItem(PLAYER_NAME_STORAGE_KEY);
+    if (typeof stored === 'string') {
+      return sanitizeName(stored);
+    }
+  } catch (error) {
+    // Ignore storage errors.
   }
-  if (leaderboard.length < 3) {
-    return true;
-  }
-  return score >= leaderboard[leaderboard.length - 1].score;
+  return '';
 }
 
-function addLeaderboardEntry(name, score) {
-  const sanitizedName = name.trim().slice(0, 24) || 'Anonymous';
-  leaderboard = [...leaderboard, { name: sanitizedName, score }]
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 3);
-  saveLeaderboard();
+function persistPlayerName(name) {
+  try {
+    localStorage.setItem(PLAYER_NAME_STORAGE_KEY, name);
+  } catch (error) {
+    // Ignore storage errors.
+  }
 }
 
-function handleNameSubmit(event) {
-  event.preventDefault();
-  if (!pendingLeaderboardEntry) {
-    showStandardGameOverOverlay();
+function evaluateLeaderboardPlacement(entries, candidate) {
+  const taggedCandidate = { ...candidate, __candidate: true };
+  const augmented = [...entries.map((entry) => ({ ...entry })), taggedCandidate];
+  augmented.sort((a, b) => b.score - a.score);
+  const index = augmented.findIndex((entry) => entry.__candidate);
+  const rank = index >= 0 ? index + 1 : null;
+  const qualifies = typeof rank === 'number' && rank <= LEADERBOARD_MAX_ENTRIES;
+  const cleaned = augmented.map(({ __candidate, ...rest }) => rest);
+  const updated = qualifies ? cleaned.slice(0, LEADERBOARD_MAX_ENTRIES) : entries;
+  const candidateEntry = index >= 0 ? cleaned[index] : null;
+  return {
+    updated,
+    rank,
+    qualifies,
+    sorted: cleaned,
+    candidateEntry,
+  };
+}
+
+function formatLeaderboardName(entry) {
+  const difficultyLabel = getDifficultyConfig(entry.difficulty).label;
+  return `${entry.name} (${difficultyLabel})`;
+}
+
+function createLeaderboardItem(entry, position, { highlight = false, spaced = false } = {}) {
+  const item = document.createElement('li');
+  item.className = 'leaderboard-item';
+  if (highlight) {
+    item.classList.add('current-run');
+  }
+  if (spaced) {
+    item.classList.add('spaced');
+  }
+
+  const positionSpan = document.createElement('span');
+  positionSpan.className = 'position';
+  positionSpan.textContent = Number.isFinite(position) ? `${position}.` : position;
+  item.append(positionSpan);
+
+  const nameSpan = document.createElement('span');
+  nameSpan.className = 'name';
+  nameSpan.textContent = formatLeaderboardName(entry);
+  item.append(nameSpan);
+
+  const scoreSpan = document.createElement('span');
+  scoreSpan.className = 'score';
+  scoreSpan.textContent = formatScore(entry.score);
+  item.append(scoreSpan);
+
+  return item;
+}
+
+function renderIntroLeaderboard() {
+  if (!introLeaderboardList) {
     return;
   }
 
-  const savedScore = pendingLeaderboardEntry.score;
-  const submittedName = nameInput ? nameInput.value : '';
-  addLeaderboardEntry(submittedName, savedScore);
-  pendingLeaderboardEntry = null;
-  if (nameForm) {
-    nameForm.reset();
+  introLeaderboardList.innerHTML = '';
+  const entries = leaderboard.slice(0, LEADERBOARD_TOP_DISPLAY_COUNT);
+  if (entries.length === 0) {
+    const placeholder = document.createElement('li');
+    placeholder.className = 'leaderboard-item';
+
+    const position = document.createElement('span');
+    position.className = 'position';
+    position.textContent = '—';
+    placeholder.append(position);
+
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = 'No high scores yet';
+    placeholder.append(name);
+
+    const score = document.createElement('span');
+    score.className = 'score';
+    score.textContent = '—';
+    placeholder.append(score);
+
+    introLeaderboardList.append(placeholder);
+    return;
   }
-  updateScoreboard();
-  showOverlay(
-    'Score Saved!',
-    `You're on the board with ${formatScore(savedScore)} points. Tap play to chase a new record.`,
-    'Play Again',
-    { buttonAction: 'restart' },
-  );
+
+  entries.forEach((entry, index) => {
+    introLeaderboardList.append(createLeaderboardItem(entry, index + 1));
+  });
+}
+
+function renderPostGameLeaderboard(topEntries, currentEntry, rank) {
+  if (!postgameLeaderboardList) {
+    return;
+  }
+
+  postgameLeaderboardList.innerHTML = '';
+  const seenPositions = new Set();
+
+  if (topEntries.length === 0 && !currentEntry) {
+    const placeholder = document.createElement('li');
+    placeholder.className = 'leaderboard-item';
+
+    const position = document.createElement('span');
+    position.className = 'position';
+    position.textContent = '—';
+    placeholder.append(position);
+
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = 'No scores recorded yet';
+    placeholder.append(name);
+
+    const score = document.createElement('span');
+    score.className = 'score';
+    score.textContent = '—';
+    placeholder.append(score);
+
+    postgameLeaderboardList.append(placeholder);
+  }
+
+  topEntries.forEach((entry, index) => {
+    const position = index + 1;
+    const highlight = currentEntry && rank === position && entry === currentEntry;
+    const item = createLeaderboardItem(entry, position, { highlight });
+    postgameLeaderboardList.append(item);
+    seenPositions.add(position);
+  });
+
+  if (currentEntry && typeof rank === 'number' && !seenPositions.has(rank)) {
+    const item = createLeaderboardItem(currentEntry, rank, { highlight: true, spaced: true });
+    postgameLeaderboardList.append(item);
+  }
 }
 
 function startGame() {
@@ -352,7 +630,6 @@ function startGame() {
   if (state.running) {
     return;
   }
-  document.body.classList.add('game-active');
   state.running = true;
   paused = false;
   overlay.classList.add('hidden');
@@ -368,7 +645,9 @@ function pauseGame() {
   }
   paused = !paused;
   if (paused) {
-    showOverlay('Paused', 'Tap resume or press Space to keep going.', 'Resume');
+    showOverlay('Paused', 'Tap resume or press Space to keep going.', 'Resume', {
+      buttonAction: 'resume',
+    });
     cancelAnimationFrame(animationFrameId);
   } else {
     overlay.classList.add('hidden');
@@ -381,30 +660,45 @@ function endGame() {
   state.running = false;
   cancelAnimationFrame(animationFrameId);
   updateScoreboard();
-
   const scoreMessage = `You scored ${formatScore(state.score)} points.`;
-  if (qualifiesForLeaderboard(state.score)) {
-    pendingLeaderboardEntry = { score: state.score };
-    showOverlay(
-      'New High Score!',
-      `${scoreMessage} Enter your name to claim your spot on the leaderboard.`,
-      'Skip',
-      { buttonAction: 'skip', showForm: true, resetForm: true },
-    );
-    return;
+
+  let placement = null;
+  let currentEntry = null;
+  let rank = null;
+
+  if (state.score > 0) {
+    const entryCandidate = {
+      name: sanitizeName(settings.playerName) || 'Anonymous',
+      score: state.score,
+      difficulty: state.difficulty,
+    };
+    placement = evaluateLeaderboardPlacement(leaderboard, entryCandidate);
+    if (placement.qualifies) {
+      leaderboard = placement.updated;
+      saveLeaderboard();
+    }
+    rank = placement.rank;
+    currentEntry = placement.candidateEntry;
   }
 
-  showStandardGameOverOverlay();
-}
+  updateScoreboard();
 
-function showStandardGameOverOverlay() {
-  const scoreMessage = `You scored ${formatScore(state.score)} points.`;
-  showOverlay(
-    'Game Over',
-    `${scoreMessage} Ready for another run?`,
-    'Play Again',
-    { buttonAction: 'restart' },
-  );
+  const sortedForDisplay = placement ? placement.sorted : leaderboard;
+  const topEntries = sortedForDisplay.slice(0, 3);
+  renderPostGameLeaderboard(topEntries, currentEntry, rank);
+
+  setUIState(UI_STATES.POSTGAME);
+
+  let message = scoreMessage;
+  if (typeof rank === 'number') {
+    message += ` You're ranked #${rank}.`;
+  } else if (state.score > 0) {
+    message += ' Keep going to reach the leaderboard.';
+  } else {
+    message += ' Try grabbing some fruit to earn points!';
+  }
+
+  showOverlay('Game Over', message, 'Continue', { buttonAction: 'postgame' });
 }
 
 function gameLoop(timestamp) {
@@ -426,21 +720,21 @@ function step() {
     state.bonus.remainingSteps -= 1;
     if (state.bonus.remainingSteps <= 0) {
       state.bonus = null;
-      state.bonusTimer = BONUS_MIN_GAP_STEPS;
+      state.bonusTimer = state.bonusMinGapSteps;
     }
   } else {
     if (state.bonusTimer > 0) {
       state.bonusTimer -= 1;
     }
     if (!state.bonus && state.bonusTimer <= 0) {
-      const shouldSpawn = Math.random() < BONUS_SPAWN_CHANCE;
-      const occupied = [...state.snake, state.food];
-      const bonus = shouldSpawn ? spawnBonus(occupied) : null;
+      const shouldSpawn = Math.random() < (state.bonusChance ?? 0);
+      const occupied = [...state.snake, state.food, ...(state.obstacles ?? [])];
+      const bonus = shouldSpawn ? spawnBonus(occupied, state) : null;
       if (bonus) {
         state.bonus = bonus;
-        state.bonusTimer = BONUS_MIN_GAP_STEPS;
+        state.bonusTimer = state.bonusMinGapSteps;
       } else {
-        state.bonusTimer = BONUS_MIN_GAP_STEPS;
+        state.bonusTimer = state.bonusMinGapSteps;
       }
     }
   }
@@ -462,26 +756,33 @@ function step() {
   state.snake.unshift(newHead);
 
   if (newHead.x === state.food.x && newHead.y === state.food.y) {
-    state.score += 10;
+    state.score += state.foodPoints;
     state.pendingGrowth += 1;
-    state.food = spawnFood(state.snake, state.bonus ? [state.bonus.position] : []);
+    state.foodEaten += 1;
+    const blocked = [...(state.obstacles ?? [])];
+    if (state.bonus) {
+      blocked.push(state.bonus.position);
+    }
+    state.food = spawnFood(state.snake, blocked);
     if (state.mode === 'progressive') {
       state.speed = Math.max(MIN_SPEED_INTERVAL, state.speed - SPEED_ACCELERATION);
     } else {
       state.speed = state.baseSpeed;
     }
     pulseBoard();
+    maybeShuffleObstacles();
   } else if (state.bonus && newHead.x === state.bonus.position.x && newHead.y === state.bonus.position.y) {
     const { type } = state.bonus;
     if (type.kind === 'points') {
-      state.score += type.score;
+      const bonusScore = Math.round(type.score * (state.bonusValueMultiplier ?? 1));
+      state.score += bonusScore;
     }
     if (type.kind === 'growth') {
       state.pendingGrowth += type.growth;
       pulseBoard();
     }
     state.bonus = null;
-    state.bonusTimer = BONUS_MIN_GAP_STEPS;
+    state.bonusTimer = state.bonusMinGapSteps;
   }
 
   if (state.pendingGrowth > 0) {
@@ -494,12 +795,22 @@ function step() {
 }
 
 function isCollision(position) {
-  return state.snake.some((segment) => segment.x === position.x && segment.y === position.y);
+  const hitsSnake = state.snake.some(
+    (segment) => segment.x === position.x && segment.y === position.y,
+  );
+  if (hitsSnake) {
+    return true;
+  }
+  if (state.obstacles && state.obstacles.some((obstacle) => obstacle.x === position.x && obstacle.y === position.y)) {
+    return true;
+  }
+  return false;
 }
 
 function draw(interpolation = 0) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   drawGrid();
+  drawObstacles();
   drawFood();
   drawBonus();
   drawSnake(interpolation);
@@ -521,6 +832,25 @@ function drawGrid() {
     ctx.lineTo(canvas.width, position);
     ctx.stroke();
   }
+  ctx.restore();
+}
+
+function drawObstacles() {
+  if (!state.obstacles || state.obstacles.length === 0) {
+    return;
+  }
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(255, 215, 99, 0.22)';
+  ctx.strokeStyle = 'rgba(255, 215, 99, 0.6)';
+  ctx.lineWidth = 2;
+  state.obstacles.forEach((obstacle) => {
+    const x = obstacle.x * CELL_SIZE + 4;
+    const y = obstacle.y * CELL_SIZE + 4;
+    const size = CELL_SIZE - 8;
+    ctx.fillRect(x, y, size, size);
+    ctx.strokeRect(x, y, size, size);
+  });
   ctx.restore();
 }
 
@@ -654,7 +984,7 @@ function isOppositeDirection(current, next) {
 }
 
 function setNextDirection(candidate) {
-  if (!candidate) {
+  if (!candidate || uiState !== UI_STATES.RUNNING) {
     return;
   }
 
@@ -671,11 +1001,13 @@ function setNextDirection(candidate) {
 function handleKeyDown(event) {
   if (event.code === 'Space') {
     event.preventDefault();
-    if (!state.running) {
-      startGame();
-    } else {
+    if (uiState === UI_STATES.RUNNING && state.running) {
       pauseGame();
     }
+    return;
+  }
+
+  if (uiState !== UI_STATES.RUNNING) {
     return;
   }
 
@@ -684,24 +1016,12 @@ function handleKeyDown(event) {
 }
 
 function showOverlay(title, message, buttonLabel, options = {}) {
-  const { buttonAction = 'default', showForm = false, resetForm = false } = options;
+  const { buttonAction = 'default', hideButton = false } = options;
   overlayTitle.textContent = title;
   overlayMessage.textContent = message;
   overlayButton.textContent = buttonLabel;
   overlayButton.dataset.action = buttonAction;
-  if (nameForm) {
-    if (showForm) {
-      if (resetForm && typeof nameForm.reset === 'function') {
-        nameForm.reset();
-      }
-      nameForm.hidden = false;
-      if (nameInput && typeof nameInput.focus === 'function') {
-        setTimeout(() => nameInput.focus(), 50);
-      }
-    } else {
-      nameForm.hidden = true;
-    }
-  }
+  overlayButton.classList.toggle('hidden', hideButton);
   overlay.classList.remove('hidden');
 }
 
@@ -770,45 +1090,90 @@ function registerTouchControls() {
   );
 }
 
-startButton.addEventListener('click', startGame);
-pauseButton.addEventListener('click', pauseGame);
-modeSelect.addEventListener('change', () => {
-  settings.mode = modeSelect.value;
-  updateSpeedLabel();
-  applySettingsToState();
-});
-speedInput.addEventListener('input', () => {
-  settings.speedLevel = Number(speedInput.value);
-  updateSpeedLabel();
-  applySettingsToState();
-});
-if (nameForm) {
-  nameForm.addEventListener('submit', handleNameSubmit);
+function handleSettingsSubmit(event) {
+  event.preventDefault();
+  if (modeSelect) {
+    settings.mode = modeSelect.value;
+  }
+  if (difficultySelect) {
+    settings.difficulty = difficultySelect.value;
+  }
+  if (playerNameInput) {
+    const sanitized = sanitizeName(playerNameInput.value);
+    settings.playerName = sanitized;
+    playerNameInput.value = sanitized;
+    persistPlayerName(sanitized);
+  }
+  resetGame({ showIntroOverlay: false });
+  setUIState(UI_STATES.RUNNING);
+  startGame();
 }
+
+if (startButton) {
+  startButton.addEventListener('click', () => {
+    setUIState(UI_STATES.SETTINGS);
+    overlay.classList.add('hidden');
+  });
+}
+
+if (settingsBackButton) {
+  settingsBackButton.addEventListener('click', () => {
+    setUIState(UI_STATES.INTRO);
+    resetGame({ showIntroOverlay: false });
+    overlay.classList.add('hidden');
+  });
+}
+
+if (settingsForm) {
+  settingsForm.addEventListener('submit', handleSettingsSubmit);
+}
+
+if (modeSelect) {
+  modeSelect.addEventListener('change', () => {
+    settings.mode = modeSelect.value;
+  });
+}
+
+if (difficultySelect) {
+  difficultySelect.addEventListener('change', () => {
+    settings.difficulty = difficultySelect.value;
+    updateDifficultyDescription();
+  });
+}
+
+if (playerNameInput) {
+  playerNameInput.addEventListener('input', (event) => {
+    settings.playerName = event.target.value;
+  });
+}
+
+if (playAgainButton) {
+  playAgainButton.addEventListener('click', () => {
+    setUIState(UI_STATES.SETTINGS);
+    resetGame({ showIntroOverlay: false });
+    overlay.classList.add('hidden');
+  });
+}
+
+if (pauseButton) {
+  pauseButton.addEventListener('click', pauseGame);
+}
+
 overlayButton.addEventListener('click', () => {
   const action = overlayButton.dataset.action;
-  if (action === 'skip' && pendingLeaderboardEntry) {
-    pendingLeaderboardEntry = null;
-    if (nameForm) {
-      nameForm.hidden = true;
-      nameForm.reset();
-    }
-    showStandardGameOverOverlay();
+  if (action === 'resume') {
+    pauseGame();
     return;
   }
-
-  if (!state.running) {
-    resetGame({ keepExpandedLayout: true });
-    startGame();
-  } else {
-    pauseGame();
-  }
+  overlay.classList.add('hidden');
 });
 
 document.addEventListener('keydown', handleKeyDown);
 registerTouchControls();
-resetGame();
-updateSpeedLabel();
+resetGame({ showIntroOverlay: false });
+setUIState(UI_STATES.INTRO);
+
+renderIntroLeaderboard();
 
 // Visual pulse when eating food
 const style = document.createElement('style');
