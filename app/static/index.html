@@ -25,13 +25,32 @@
             <span class="label">High Score</span>
             <span id="high-score-value" class="value">0</span>
           </div>
-          <div class="leaderboard">
-            <span class="label">Top Scores</span>
-            <ol id="leaderboard-list" class="leaderboard-list"></ol>
-          </div>
         </div>
-        <div class="game-controls">
-          <div class="settings-panel" aria-label="Speed settings">
+        <div class="hud-actions">
+          <button id="pause-button" class="btn">Pause</button>
+        </div>
+      </header>
+
+      <section id="menu-panels" class="menu-panels">
+        <div id="intro-panel" class="menu-card">
+          <h2 class="menu-title">Leaderboard</h2>
+          <ol id="intro-leaderboard" class="leaderboard-list"></ol>
+          <button id="start-button" class="btn primary">Start Game</button>
+        </div>
+        <div id="settings-panel" class="menu-card hidden">
+          <h2 class="menu-title">Game Settings</h2>
+          <form id="settings-form" class="settings-form">
+            <label class="field">
+              <span class="field-label">Player Name</span>
+              <input
+                id="player-name-input"
+                type="text"
+                name="player-name"
+                maxlength="24"
+                autocomplete="name"
+                placeholder="Enter your name"
+              />
+            </label>
             <label class="field">
               <span class="field-label">Mode</span>
               <select id="mode-select">
@@ -39,25 +58,27 @@
                 <option value="progressive" selected>Progressive</option>
               </select>
             </label>
-            <label class="field range-field">
-              <span class="field-label" id="speed-label">Starting speed</span>
-              <input
-                id="speed-input"
-                type="range"
-                min="1"
-                max="10"
-                step="1"
-                value="5"
-                aria-describedby="speed-label"
-              />
+            <label class="field">
+              <span class="field-label">Difficulty</span>
+              <select id="difficulty-select">
+                <option value="easy">Easy</option>
+                <option value="medium">Medium</option>
+                <option value="hard">Hard</option>
+              </select>
             </label>
-          </div>
-          <div class="controls">
-            <button id="start-button" class="btn primary">Start</button>
-            <button id="pause-button" class="btn">Pause</button>
-          </div>
+            <p id="difficulty-description" class="settings-description"></p>
+            <div class="controls">
+              <button type="button" id="settings-back-button" class="btn">Back</button>
+              <button type="submit" class="btn primary">Begin Run</button>
+            </div>
+          </form>
         </div>
-      </header>
+        <div id="postgame-panel" class="menu-card hidden">
+          <h2 class="menu-title">Leaderboard</h2>
+          <ol id="postgame-leaderboard" class="leaderboard-list"></ol>
+          <button id="play-again-button" class="btn primary">Play Again</button>
+        </div>
+      </section>
 
       <section class="board-wrapper">
         <canvas id="game-board" width="640" height="640" aria-label="Snake game board"></canvas>
@@ -67,22 +88,7 @@
             <p id="overlay-message">
               Use the arrow keys, WASD, or swipe on mobile to guide the snake.
             </p>
-            <form id="name-form" class="name-form" hidden>
-              <label class="field">
-                <span class="field-label">Your Name</span>
-                <input
-                  id="name-input"
-                  type="text"
-                  name="player-name"
-                  maxlength="24"
-                  autocomplete="name"
-                  placeholder="Enter your name"
-                  required
-                />
-              </label>
-              <button type="submit" class="btn primary">Save Score</button>
-            </form>
-            <button id="overlay-button" class="btn primary">Play</button>
+            <button id="overlay-button" class="btn primary">Continue</button>
           </div>
         </div>
       </section>

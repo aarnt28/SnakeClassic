@@ -14,6 +14,10 @@
   box-sizing: border-box;
 }
 
+.hidden {
+  display: none !important;
+}
+
 html {
   height: 100%;
 }
@@ -77,9 +81,16 @@ body.game-active .app-shell {
 .hud {
   display: flex;
   flex-wrap: wrap;
-  justify-content: space-between;
   align-items: center;
   gap: 1rem;
+}
+
+.hud-actions {
+  margin-left: auto;
+}
+
+.hud-actions .btn {
+  min-width: 120px;
 }
 
 body.game-active .hud {
@@ -95,25 +106,14 @@ body.game-active .hud {
   gap: 1.5rem;
 }
 
-.leaderboard {
-  display: grid;
-  gap: 0.4rem;
-  min-width: 180px;
-}
-
-.leaderboard .label {
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.15em;
-  color: rgba(239, 243, 255, 0.7);
-}
-
 .leaderboard-list {
   margin: 0;
   padding: 0;
   list-style: none;
   display: grid;
   gap: 0.35rem;
+  max-height: 320px;
+  overflow: auto;
 }
 
 .leaderboard-item {
@@ -123,6 +123,12 @@ body.game-active .hud {
   gap: 0.5rem;
   font-size: 0.95rem;
   color: rgba(239, 243, 255, 0.82);
+}
+
+.leaderboard-item.spaced {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed rgba(239, 243, 255, 0.18);
 }
 
 .leaderboard-item .position {
@@ -141,6 +147,13 @@ body.game-active .hud {
   font-weight: 700;
   color: var(--accent);
   text-shadow: 0 0 8px rgba(110, 245, 255, 0.5);
+}
+
+.leaderboard-item.current-run .position,
+.leaderboard-item.current-run .name,
+.leaderboard-item.current-run .score {
+  color: #ffd966;
+  text-shadow: 0 0 10px rgba(255, 217, 102, 0.45);
 }
 
 .metric {
@@ -162,21 +175,6 @@ body.game-active .hud {
   text-shadow: 0 0 12px rgba(110, 245, 255, 0.6);
 }
 
-.game-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 1.25rem;
-}
-
-.settings-panel {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 1rem;
-}
-
 .field {
   display: grid;
   gap: 0.4rem;
@@ -190,8 +188,9 @@ body.game-active .hud {
   color: rgba(239, 243, 255, 0.6);
 }
 
-.settings-panel select,
-.settings-panel input[type='range'] {
+.settings-form select,
+.settings-form input,
+.settings-form textarea {
   appearance: none;
   background: rgba(12, 18, 28, 0.75);
   border: 1px solid rgba(110, 245, 255, 0.35);
@@ -203,7 +202,7 @@ body.game-active .hud {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
 }
 
-.settings-panel select {
+.settings-form select {
   padding-right: 2.5rem;
   background-image: linear-gradient(45deg, transparent 50%, rgba(110, 245, 255, 0.65) 50%),
     linear-gradient(135deg, rgba(110, 245, 255, 0.65) 50%, transparent 50%);
@@ -212,49 +211,64 @@ body.game-active .hud {
   background-repeat: no-repeat;
 }
 
-.settings-panel input[type='range'] {
-  width: clamp(160px, 14vw, 220px);
-  padding: 0;
-  height: 0.45rem;
-  border-radius: 999px;
-}
-
-.settings-panel input[type='range']::-webkit-slider-thumb {
-  appearance: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: linear-gradient(120deg, rgba(110, 245, 255, 0.95), rgba(112, 255, 119, 0.95));
-  box-shadow: 0 0 0 3px rgba(12, 18, 28, 0.85);
-  cursor: pointer;
-  border: none;
-}
-
-.settings-panel input[type='range']::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: linear-gradient(120deg, rgba(110, 245, 255, 0.95), rgba(112, 255, 119, 0.95));
-  box-shadow: 0 0 0 3px rgba(12, 18, 28, 0.85);
-  cursor: pointer;
-  border: none;
-}
-
-.settings-panel input[type='range']::-webkit-slider-runnable-track {
-  height: 0.45rem;
-  border-radius: 999px;
-  background: linear-gradient(90deg, rgba(110, 245, 255, 0.25), rgba(255, 110, 196, 0.35));
-}
-
-.settings-panel input[type='range']::-moz-range-track {
-  height: 0.45rem;
-  border-radius: 999px;
-  background: linear-gradient(90deg, rgba(110, 245, 255, 0.25), rgba(255, 110, 196, 0.35));
-}
-
 .controls {
   display: flex;
   gap: 0.75rem;
+}
+
+.settings-description {
+  margin: 0.5rem 0 1.5rem;
+  color: rgba(239, 243, 255, 0.75);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.menu-panels {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.menu-card {
+  background: rgba(8, 12, 20, 0.75);
+  border-radius: 20px;
+  padding: 1.75rem;
+  border: 1px solid rgba(239, 243, 255, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(110, 245, 255, 0.08);
+  display: grid;
+  gap: 1.25rem;
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+.menu-card .controls {
+  justify-content: flex-end;
+}
+
+.menu-title {
+  margin: 0;
+  font-size: 1.5rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(239, 243, 255, 0.85);
+}
+
+.settings-form {
+  display: grid;
+  gap: 1rem;
+}
+
+body[data-ui-state='running'] .menu-panels {
+  display: none;
+}
+
+body[data-ui-state='intro'] #pause-button,
+body[data-ui-state='settings'] #pause-button,
+body[data-ui-state='postgame'] #pause-button {
+  display: none;
+}
+
+body[data-ui-state='running'] #pause-button {
+  display: inline-flex;
 }
 
 .btn {
@@ -347,39 +361,6 @@ body.game-active #game-board {
 .overlay p {
   margin-bottom: 1.5rem;
   color: rgba(239, 243, 255, 0.75);
-}
-
-.name-form {
-  display: grid;
-  gap: 0.85rem;
-  margin-bottom: 1.5rem;
-  text-align: left;
-}
-
-.name-form .field {
-  min-width: 0;
-}
-
-.name-form input {
-  width: 100%;
-  padding: 0.65rem 1rem;
-  border-radius: 12px;
-  border: 1px solid rgba(110, 245, 255, 0.35);
-  background: rgba(12, 18, 28, 0.85);
-  color: #eff3ff;
-  font-family: inherit;
-  font-size: 1rem;
-  box-shadow: inset 0 0 0 1px rgba(110, 245, 255, 0.05);
-}
-
-.name-form input:focus {
-  outline: none;
-  border-color: rgba(110, 245, 255, 0.75);
-  box-shadow: 0 0 0 3px rgba(110, 245, 255, 0.25);
-}
-
-.name-form .btn {
-  width: 100%;
 }
 
 .info-panel {
