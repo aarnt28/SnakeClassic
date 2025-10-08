@@ -25,6 +25,10 @@
             <span class="label">High Score</span>
             <span id="high-score-value" class="value">0</span>
           </div>
+          <div class="leaderboard">
+            <span class="label">Top Scores</span>
+            <ol id="leaderboard-list" class="leaderboard-list"></ol>
+          </div>
         </div>
         <div class="game-controls">
           <div class="settings-panel" aria-label="Speed settings">
@@ -63,6 +67,21 @@
             <p id="overlay-message">
               Use the arrow keys, WASD, or swipe on mobile to guide the snake.
             </p>
+            <form id="name-form" class="name-form" hidden>
+              <label class="field">
+                <span class="field-label">Your Name</span>
+                <input
+                  id="name-input"
+                  type="text"
+                  name="player-name"
+                  maxlength="24"
+                  autocomplete="name"
+                  placeholder="Enter your name"
+                  required
+                />
+              </label>
+              <button type="submit" class="btn primary">Save Score</button>
+            </form>
             <button id="overlay-button" class="btn primary">Play</button>
           </div>
         </div>

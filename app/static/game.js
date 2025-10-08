@@ -11,6 +11,9 @@ const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlayMessage = document.getElementById('overlay-message');
 const overlayButton = document.getElementById('overlay-button');
+const leaderboardList = document.getElementById('leaderboard-list');
+const nameForm = document.getElementById('name-form');
+const nameInput = document.getElementById('name-input');
 
 const CELL_SIZE = 32;
 const GRID_SIZE = canvas.width / CELL_SIZE;
@@ -60,15 +63,17 @@ const settings = {
   speedLevel: Number(speedInput.value),
 };
 
+const LEADERBOARD_STORAGE_KEY = 'snake-leaderboard';
+const LEGACY_HIGH_SCORE_KEY = 'snake-high-score';
+
+let leaderboard = loadLeaderboard();
 let state = createInitialState();
-let highScore = Number(localStorage.getItem('snake-high-score') || '0');
 let animationFrameId = null;
 let lastFrameTime = 0;
 let accumulatedTime = 0;
 let paused = false;
 let touchStart = null;
-
-highScoreValue.textContent = highScore.toString();
+let pendingLeaderboardEntry = null;
 
 function attemptFullscreen() {
   if (!isTouchDevice) {
@@ -198,6 +203,11 @@ function resetGame({ keepExpandedLayout = false } = {}) {
   if (!keepExpandedLayout) {
     document.body.classList.remove('game-active');
   }
+  pendingLeaderboardEntry = null;
+  if (nameForm) {
+    nameForm.hidden = true;
+    nameForm.reset();
+  }
   state = createInitialState();
   updateScoreboard();
   draw();
@@ -205,12 +215,136 @@ function resetGame({ keepExpandedLayout = false } = {}) {
     'Press Start',
     'Choose a speed mode above, then use the arrow keys, WASD, or swipe on mobile to guide the snake. On phones, allow fullscreen for the smoothest controls.',
     'Play',
+    { buttonAction: 'restart' },
   );
 }
 
+function formatScore(value) {
+  return Number.isFinite(value) ? Number(value).toLocaleString() : '0';
+}
+
+function renderLeaderboard() {
+  if (!leaderboardList) {
+    return;
+  }
+
+  leaderboardList.innerHTML = '';
+  for (let index = 0; index < 3; index += 1) {
+    const entry = leaderboard[index] ?? null;
+    const item = document.createElement('li');
+    item.className = 'leaderboard-item';
+
+    const position = document.createElement('span');
+    position.className = 'position';
+    position.textContent = `${index + 1}.`;
+    item.append(position);
+
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = entry ? entry.name : '—';
+    item.append(name);
+
+    const score = document.createElement('span');
+    score.className = 'score';
+    score.textContent = entry ? formatScore(entry.score) : '—';
+    item.append(score);
+
+    leaderboardList.append(item);
+  }
+}
+
 function updateScoreboard() {
-  scoreValue.textContent = state.score.toString();
-  highScoreValue.textContent = highScore.toString();
+  scoreValue.textContent = formatScore(state.score);
+  const topScore = leaderboard[0];
+  highScoreValue.textContent = topScore ? formatScore(topScore.score) : '0';
+  renderLeaderboard();
+}
+
+function saveLeaderboard() {
+  try {
+    localStorage.setItem(LEADERBOARD_STORAGE_KEY, JSON.stringify(leaderboard));
+  } catch (error) {
+    // Ignore storage errors (e.g., Safari private mode).
+  }
+}
+
+function loadLeaderboard() {
+  try {
+    const stored = localStorage.getItem(LEADERBOARD_STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .filter(
+            (entry) =>
+              entry &&
+              typeof entry.name === 'string' &&
+              Number.isFinite(Number(entry.score)),
+          )
+          .map((entry) => ({ name: entry.name, score: Number(entry.score) }))
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 3);
+      }
+    }
+  } catch (error) {
+    // Ignore parse or storage errors.
+  }
+
+  const legacyScore = Number(localStorage.getItem(LEGACY_HIGH_SCORE_KEY) || '0');
+  if (Number.isFinite(legacyScore) && legacyScore > 0) {
+    const legacyLeaderboard = [
+      { name: 'Player', score: Math.floor(legacyScore) },
+    ];
+    try {
+      localStorage.setItem(LEADERBOARD_STORAGE_KEY, JSON.stringify(legacyLeaderboard));
+    } catch (error) {
+      // Ignore storage errors.
+    }
+    return legacyLeaderboard;
+  }
+
+  return [];
+}
+
+function qualifiesForLeaderboard(score) {
+  if (score <= 0) {
+    return false;
+  }
+  if (leaderboard.length < 3) {
+    return true;
+  }
+  return score >= leaderboard[leaderboard.length - 1].score;
+}
+
+function addLeaderboardEntry(name, score) {
+  const sanitizedName = name.trim().slice(0, 24) || 'Anonymous';
+  leaderboard = [...leaderboard, { name: sanitizedName, score }]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
+  saveLeaderboard();
+}
+
+function handleNameSubmit(event) {
+  event.preventDefault();
+  if (!pendingLeaderboardEntry) {
+    showStandardGameOverOverlay();
+    return;
+  }
+
+  const savedScore = pendingLeaderboardEntry.score;
+  const submittedName = nameInput ? nameInput.value : '';
+  addLeaderboardEntry(submittedName, savedScore);
+  pendingLeaderboardEntry = null;
+  if (nameForm) {
+    nameForm.reset();
+  }
+  updateScoreboard();
+  showOverlay(
+    'Score Saved!',
+    `You're on the board with ${formatScore(savedScore)} points. Tap play to chase a new record.`,
+    'Play Again',
+    { buttonAction: 'restart' },
+  );
 }
 
 function startGame() {
@@ -246,12 +380,31 @@ function pauseGame() {
 function endGame() {
   state.running = false;
   cancelAnimationFrame(animationFrameId);
-  if (state.score > highScore) {
-    highScore = state.score;
-    localStorage.setItem('snake-high-score', String(highScore));
-  }
   updateScoreboard();
-  showOverlay('Game Over', 'Your neon snake crashed. Ready for another run?', 'Play Again');
+
+  const scoreMessage = `You scored ${formatScore(state.score)} points.`;
+  if (qualifiesForLeaderboard(state.score)) {
+    pendingLeaderboardEntry = { score: state.score };
+    showOverlay(
+      'New High Score!',
+      `${scoreMessage} Enter your name to claim your spot on the leaderboard.`,
+      'Skip',
+      { buttonAction: 'skip', showForm: true, resetForm: true },
+    );
+    return;
+  }
+
+  showStandardGameOverOverlay();
+}
+
+function showStandardGameOverOverlay() {
+  const scoreMessage = `You scored ${formatScore(state.score)} points.`;
+  showOverlay(
+    'Game Over',
+    `${scoreMessage} Ready for another run?`,
+    'Play Again',
+    { buttonAction: 'restart' },
+  );
 }
 
 function gameLoop(timestamp) {
@@ -496,6 +649,25 @@ function drawEyes(x, y, size) {
   ctx.restore();
 }
 
+function isOppositeDirection(current, next) {
+  return current.x + next.x === 0 && current.y + next.y === 0;
+}
+
+function setNextDirection(candidate) {
+  if (!candidate) {
+    return;
+  }
+
+  const currentHeading = state.nextDirection ?? state.direction;
+  const opposite =
+    state.snake.length > 1 && isOppositeDirection(currentHeading, candidate);
+  if (opposite) {
+    return;
+  }
+
+  state.nextDirection = candidate;
+}
+
 function handleKeyDown(event) {
   if (event.code === 'Space') {
     event.preventDefault();
@@ -508,22 +680,28 @@ function handleKeyDown(event) {
   }
 
   const next = directions[event.code];
-  if (!next) {
-    return;
-  }
-
-  const isOpposite = state.direction.x + next.x === 0 && state.direction.y + next.y === 0;
-  if (isOpposite && state.snake.length > 1) {
-    return;
-  }
-
-  state.nextDirection = next;
+  setNextDirection(next);
 }
 
-function showOverlay(title, message, buttonLabel) {
+function showOverlay(title, message, buttonLabel, options = {}) {
+  const { buttonAction = 'default', showForm = false, resetForm = false } = options;
   overlayTitle.textContent = title;
   overlayMessage.textContent = message;
   overlayButton.textContent = buttonLabel;
+  overlayButton.dataset.action = buttonAction;
+  if (nameForm) {
+    if (showForm) {
+      if (resetForm && typeof nameForm.reset === 'function') {
+        nameForm.reset();
+      }
+      nameForm.hidden = false;
+      if (nameInput && typeof nameInput.focus === 'function') {
+        setTimeout(() => nameInput.focus(), 50);
+      }
+    } else {
+      nameForm.hidden = true;
+    }
+  }
   overlay.classList.remove('hidden');
 }
 
@@ -563,9 +741,9 @@ function registerTouchControls() {
       if (Math.max(absX, absY) < 24) return;
 
       if (absX > absY) {
-        state.nextDirection = dx > 0 ? directions.ArrowRight : directions.ArrowLeft;
+        setNextDirection(dx > 0 ? directions.ArrowRight : directions.ArrowLeft);
       } else {
-        state.nextDirection = dy > 0 ? directions.ArrowDown : directions.ArrowUp;
+        setNextDirection(dy > 0 ? directions.ArrowDown : directions.ArrowUp);
       }
 
       touchStart = null;
@@ -604,7 +782,21 @@ speedInput.addEventListener('input', () => {
   updateSpeedLabel();
   applySettingsToState();
 });
+if (nameForm) {
+  nameForm.addEventListener('submit', handleNameSubmit);
+}
 overlayButton.addEventListener('click', () => {
+  const action = overlayButton.dataset.action;
+  if (action === 'skip' && pendingLeaderboardEntry) {
+    pendingLeaderboardEntry = null;
+    if (nameForm) {
+      nameForm.hidden = true;
+      nameForm.reset();
+    }
+    showStandardGameOverOverlay();
+    return;
+  }
+
   if (!state.running) {
     resetGame({ keepExpandedLayout: true });
     startGame();
