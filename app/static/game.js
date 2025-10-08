@@ -300,8 +300,8 @@ const DIFFICULTY_CONFIG = {
   },
   medium: {
     label: 'Medium',
-    speedLevel: 4,
-    bonusChance: 0.38,
+    speedLevel: 5,
+    bonusChance: 0.50,
     bonusMinGapSteps: 6,
     bonusInitialCooldown: 5,
     bonusDurationSteps: 36,
