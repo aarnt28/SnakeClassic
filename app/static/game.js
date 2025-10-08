@@ -217,7 +217,6 @@ function levelToInterval(level) {
   return Math.max(MIN_SPEED_INTERVAL, Math.min(MAX_SPEED_INTERVAL, interval));
 }
 
-function applySettingsToState() {
 function getDifficultyConfig(difficulty) {
   return DIFFICULTY_CONFIG[difficulty] || DIFFICULTY_CONFIG.easy;
 }
