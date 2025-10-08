@@ -16,15 +16,18 @@
     <div class="background-layer"></div>
     <main class="app-shell">
       <header class="hud">
-        <div class="scoreboard">
-          <div class="metric">
-            <span class="label">Score</span>
-            <span id="score-value" class="value">0</span>
+        <div class="hud-metrics">
+          <div class="scoreboard">
+            <div class="metric">
+              <span class="label">Score</span>
+              <span id="score-value" class="value">0</span>
+            </div>
+            <div class="metric">
+              <span class="label">High Score</span>
+              <span id="high-score-value" class="value">0</span>
+            </div>
           </div>
-          <div class="metric">
-            <span class="label">High Score</span>
-            <span id="high-score-value" class="value">0</span>
-          </div>
+          <div id="bonus-indicator" class="bonus-indicator" aria-label="Bonus streak multipliers"></div>
         </div>
         <div class="hud-actions">
           <button id="pause-button" class="btn">Pause</button>
