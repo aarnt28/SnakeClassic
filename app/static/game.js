@@ -111,19 +111,19 @@ const directions = {
 const DIFFICULTY_CONFIG = {
   easy: {
     label: 'Easy',
-    speedLevel: 3,
+    speedLevel: 2,
     bonusChance: 0.65,
     bonusMinGapSteps: 4,
     bonusInitialCooldown: 3,
     bonusDurationSteps: 40,
-    bonusValueMultiplier: 1,
+    bonusValueMultiplier: 1.1,
     obstacleCount: 0,
     obstacleChangeInterval: Infinity,
     basePoints: 10,
   },
   medium: {
     label: 'Medium',
-    speedLevel: 6,
+    speedLevel: 4,
     bonusChance: 0.38,
     bonusMinGapSteps: 6,
     bonusInitialCooldown: 5,
@@ -135,7 +135,7 @@ const DIFFICULTY_CONFIG = {
   },
   hard: {
     label: 'Hard',
-    speedLevel: 9,
+    speedLevel: 7,
     bonusChance: 0.38,
     bonusMinGapSteps: 6,
     bonusInitialCooldown: 5,
