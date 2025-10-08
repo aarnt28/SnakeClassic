@@ -24,6 +24,7 @@ const difficultyDescription = document.getElementById('difficulty-description');
 const introPanel = document.getElementById('intro-panel');
 const settingsPanel = document.getElementById('settings-panel');
 const postGamePanel = document.getElementById('postgame-panel');
+const bonusIndicator = document.getElementById('bonus-indicator');
 
 const BASE_CELL_SIZE = 32;
 const LEADERBOARD_CACHE_KEY = 'snake-leaderboard-cache';
@@ -47,26 +48,77 @@ const DEFAULT_BONUS_DURATION_STEPS = 32;
 const DEFAULT_BONUS_MIN_GAP_STEPS = 8;
 const DEFAULT_BONUS_INITIAL_COOLDOWN = 6;
 const BONUS_STREAK_INCREMENT = 0.1;
+const BONUS_DURATION_BASELINE_DIMENSION = 25;
+const BONUS_DURATION_MIN_STEPS = 12;
 const BONUS_TYPES = [
   {
     kind: 'points',
+    name: 'Points',
     score: 30,
     colors: ['rgba(255, 215, 99, 0.95)', 'rgba(255, 111, 97, 0.95)'],
     glow: 'rgba(255, 183, 0, 0.65)',
     outline: 'rgba(255, 245, 224, 0.8)',
     label: '★',
+    weight: 1,
   },
   {
     kind: 'growth',
+    name: 'Growth',
     growth: 3,
     colors: ['rgba(110, 245, 255, 0.95)', 'rgba(186, 110, 255, 0.95)'],
     glow: 'rgba(186, 110, 255, 0.55)',
     outline: 'rgba(230, 215, 255, 0.75)',
     label: '⇑',
+    weight: 1,
+  },
+  {
+    kind: 'ultra',
+    name: 'Ultra',
+    scores: { easy: 50, medium: 100, hard: 150 },
+    colors: ['rgba(255, 255, 163, 0.95)', 'rgba(255, 110, 196, 0.95)'],
+    glow: 'rgba(255, 233, 120, 0.6)',
+    outline: 'rgba(255, 248, 210, 0.85)',
+    label: '⚡',
+    weight: 0.2,
+    durationScale: 0.6,
   },
 ];
+
+function chooseBonusType() {
+  const totalWeight = BONUS_TYPES.reduce((sum, type) => sum + (type.weight ?? 1), 0);
+  const roll = Math.random() * totalWeight;
+  let cumulative = 0;
+  for (let index = 0; index < BONUS_TYPES.length; index += 1) {
+    const type = BONUS_TYPES[index];
+    cumulative += type.weight ?? 1;
+    if (roll <= cumulative) {
+      return type;
+    }
+  }
+  return BONUS_TYPES[BONUS_TYPES.length - 1];
+}
+
+function getAverageGridDimension() {
+  return (gridColumns + gridRows) / 2;
+}
+
+function scaleBonusDuration(baseDuration) {
+  const dimension = getAverageGridDimension();
+  const scale = Math.max(0.5, dimension / BONUS_DURATION_BASELINE_DIMENSION);
+  const scaled = Math.round(baseDuration * scale);
+  return Math.max(BONUS_DURATION_MIN_STEPS, scaled);
+}
+
+function getBonusDurationForType(type, currentState = state) {
+  const base = currentState
+    ? currentState.bonusDurationSteps ?? DEFAULT_BONUS_DURATION_STEPS
+    : scaleBonusDuration(DEFAULT_BONUS_DURATION_STEPS);
+  const modifier = type && type.durationScale ? type.durationScale : 1;
+  return Math.max(1, Math.round(base * modifier));
+}
 const isTouchDevice =
   'ontouchstart' in window || navigator.maxTouchPoints > 0 || navigator.msMaxTouchPoints > 0;
+const bonusIndicatorItems = new Map();
 
 function createBonusStreaks() {
   const streaks = {};
@@ -196,6 +248,8 @@ if (modeSelect) {
   settings.mode = modeSelect.value;
 }
 updateDifficultyDescription();
+buildBonusIndicator();
+updateBonusIndicator();
 
 function setUIState(next) {
   uiState = next;
@@ -374,6 +428,34 @@ function applyBoardGeometry(geometry) {
   }
 }
 
+function adjustActiveBonusDuration(oldBaseScaled, newBaseScaled) {
+  if (!state || !state.bonus) {
+    return;
+  }
+  const typeScale = state.bonus.type && state.bonus.type.durationScale ? state.bonus.type.durationScale : 1;
+  const previousBase = Number.isFinite(oldBaseScaled) && oldBaseScaled > 0 ? oldBaseScaled : newBaseScaled;
+  const oldTotal = Math.max(1, Math.round(previousBase * typeScale));
+  const newTotal = Math.max(1, Math.round(newBaseScaled * typeScale));
+  const remaining = Math.max(0, Math.min(state.bonus.remainingSteps, oldTotal));
+  const consumedRatio = 1 - remaining / oldTotal;
+  const adjustedRemaining = Math.max(0, Math.round(newTotal * (1 - consumedRatio)));
+  state.bonus.remainingSteps = Math.min(newTotal, adjustedRemaining);
+}
+
+function handleBoardGeometryChange() {
+  if (!state) {
+    return;
+  }
+  const previousScaled = state.bonusDurationSteps;
+  const baseDuration = state.baseBonusDurationSteps ?? DEFAULT_BONUS_DURATION_STEPS;
+  const scaled = scaleBonusDuration(baseDuration);
+  state.bonusDurationSteps = scaled;
+  if (state.bonus && Number.isFinite(previousScaled)) {
+    adjustActiveBonusDuration(previousScaled, scaled);
+  }
+  updateBonusIndicator();
+}
+
 function refreshBoardGeometry({ force = false, allowDuringGame = false } = {}) {
   if (state && state.running && !allowDuringGame) {
     return false;
@@ -386,6 +468,7 @@ function refreshBoardGeometry({ force = false, allowDuringGame = false } = {}) {
     geometry.rows !== gridRows;
   if (changed) {
     applyBoardGeometry(geometry);
+    handleBoardGeometryChange();
   }
   return changed;
 }
@@ -511,10 +594,15 @@ function applySettingsToState() {
   state.difficulty = settings.difficulty;
   state.bonusChance = config.bonusChance;
   state.bonusMinGapSteps = config.bonusMinGapSteps ?? DEFAULT_BONUS_MIN_GAP_STEPS;
-  state.bonusDurationSteps = config.bonusDurationSteps ?? DEFAULT_BONUS_DURATION_STEPS;
+  const previousScaledDuration = state.bonusDurationSteps;
+  state.baseBonusDurationSteps = config.bonusDurationSteps ?? DEFAULT_BONUS_DURATION_STEPS;
+  state.bonusDurationSteps = scaleBonusDuration(state.baseBonusDurationSteps);
   state.bonusValueMultiplier = config.bonusValueMultiplier ?? 1;
   if (!state.bonusStreaks) {
     state.bonusStreaks = createBonusStreaks();
+  }
+  if (state.bonus && Number.isFinite(previousScaledDuration)) {
+    adjustActiveBonusDuration(previousScaledDuration, state.bonusDurationSteps);
   }
   state.obstacleBaseCount = config.obstacleCount ?? 0;
   state.obstacleCount = config.obstacleCount ?? 0;
@@ -531,6 +619,8 @@ function createInitialState() {
   const centerX = Math.floor(gridColumns / 2);
   const centerY = Math.floor(gridRows / 2);
   const baseSpeed = levelToInterval(config.speedLevel);
+  const baseBonusDuration = config.bonusDurationSteps ?? DEFAULT_BONUS_DURATION_STEPS;
+  const scaledBonusDuration = scaleBonusDuration(baseBonusDuration);
   const snake = [
     { x: (centerX + 1) % gridColumns, y: centerY % gridRows },
     { x: centerX % gridColumns, y: centerY % gridRows },
@@ -549,7 +639,8 @@ function createInitialState() {
     food,
     bonus: null,
     bonusTimer: config.bonusInitialCooldown ?? DEFAULT_BONUS_INITIAL_COOLDOWN,
-    bonusDurationSteps: config.bonusDurationSteps ?? DEFAULT_BONUS_DURATION_STEPS,
+    baseBonusDurationSteps: baseBonusDuration,
+    bonusDurationSteps: scaledBonusDuration,
     bonusChance: config.bonusChance,
     bonusMinGapSteps: config.bonusMinGapSteps ?? DEFAULT_BONUS_MIN_GAP_STEPS,
     bonusValueMultiplier: config.bonusValueMultiplier ?? 1,
@@ -641,11 +732,11 @@ function spawnBonus(occupied, currentState = state) {
     return null;
   }
 
-  const type = BONUS_TYPES[Math.floor(Math.random() * BONUS_TYPES.length)];
+  const type = chooseBonusType();
   return {
     position,
     type,
-    remainingSteps: currentState.bonusDurationSteps ?? DEFAULT_BONUS_DURATION_STEPS,
+    remainingSteps: getBonusDurationForType(type, currentState),
   };
 }
 
@@ -674,11 +765,82 @@ function formatScore(value) {
   return Number.isFinite(value) ? Number(value).toLocaleString() : '0';
 }
 
+function formatBonusMultiplier(multiplier) {
+  return `x${multiplier.toFixed(1)}`;
+}
+
+function buildBonusIndicator() {
+  if (!bonusIndicator) {
+    return;
+  }
+  bonusIndicator.innerHTML = '';
+  bonusIndicatorItems.clear();
+  BONUS_TYPES.forEach((type) => {
+    const item = document.createElement('div');
+    item.className = 'bonus-indicator-item';
+    item.dataset.kind = type.kind;
+
+    const icon = document.createElement('span');
+    icon.className = 'bonus-icon';
+    icon.textContent = type.label;
+    if (type.colors && type.colors.length > 0) {
+      icon.style.setProperty('--bonus-color-start', type.colors[0]);
+      icon.style.setProperty(
+        '--bonus-color-end',
+        type.colors[type.colors.length - 1] ?? type.colors[0],
+      );
+    }
+
+    const multiplier = document.createElement('span');
+    multiplier.className = 'bonus-multiplier';
+    const initialMultiplierText = formatBonusMultiplier(1);
+    multiplier.textContent = initialMultiplierText;
+
+    const labelText = type.name ? `${type.name} bonus` : `${type.kind} bonus`;
+    const accessibleLabel = `${labelText} multiplier ${initialMultiplierText}`;
+    item.setAttribute('aria-label', accessibleLabel);
+    item.setAttribute('title', accessibleLabel);
+
+    item.append(icon, multiplier);
+    bonusIndicator.appendChild(item);
+    bonusIndicatorItems.set(type.kind, { item, multiplier, labelText });
+  });
+}
+
+function updateBonusIndicator() {
+  if (!bonusIndicator) {
+    return;
+  }
+  if (bonusIndicatorItems.size === 0) {
+    buildBonusIndicator();
+  }
+  BONUS_TYPES.forEach((type) => {
+    const entry = bonusIndicatorItems.get(type.kind);
+    if (!entry) {
+      return;
+    }
+    const multiplierValue =
+      state && state.bonusStreaks
+        ? getBonusStreakMultiplier(state.bonusStreaks, type.kind)
+        : 1;
+    const multiplierText = formatBonusMultiplier(multiplierValue);
+    entry.multiplier.textContent = multiplierText;
+    const labelText = entry.labelText || `${type.kind} bonus`;
+    const accessibleLabel = `${labelText} multiplier ${multiplierText}`;
+    entry.item.setAttribute('aria-label', accessibleLabel);
+    entry.item.setAttribute('title', accessibleLabel);
+    entry.item.classList.toggle('boosted', multiplierValue > 1.0001);
+    const isActive = state && state.bonus && state.bonus.type.kind === type.kind;
+    entry.item.classList.toggle('active', Boolean(isActive));
+  });
+}
+
 function updateScoreboard() {
   const currentScore = state ? state.score : 0;
   scoreValue.textContent = formatScore(currentScore);
   const topScore = leaderboard[0];
   highScoreValue.textContent = topScore ? formatScore(topScore.score) : '0';
+  updateBonusIndicator();
   renderIntroLeaderboard();
 }
 
@@ -1186,14 +1348,20 @@ function step() {
       const baseScore = type.score * difficultyMultiplier;
       const bonusScore = Math.round(baseScore * streakMultiplier);
       state.score += bonusScore;
-    }
-    if (type.kind === 'growth') {
+    } else if (type.kind === 'growth') {
       state.pendingGrowth += type.growth;
       const baseGrowthPoints = type.growth * state.foodPoints;
       if (baseGrowthPoints > 0) {
         const growthScore = Math.round(baseGrowthPoints * streakMultiplier);
         state.score += growthScore;
       }
+      pulseBoard();
+    } else if (type.kind === 'ultra') {
+      const difficultyKey = state.difficulty ?? 'easy';
+      const baseValue =
+        (type.scores && type.scores[difficultyKey]) || type.score || 0;
+      const totalValue = Math.round(baseValue * difficultyMultiplier * streakMultiplier);
+      state.score += totalValue;
       pulseBoard();
     }
     incrementBonusStreak(state.bonusStreaks, type.kind);
