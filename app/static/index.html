@@ -23,11 +23,15 @@
               <span id="score-value" class="value">0</span>
             </div>
             <div class="metric">
-              <span class="label">High Score</span>
+              <span class="label"
+                >High Score
+                <span id="high-score-difficulty-label" class="label-detail"></span
+              ></span>
               <span id="high-score-value" class="value">0</span>
             </div>
           </div>
           <div id="bonus-indicator" class="bonus-indicator" aria-label="Bonus streak multipliers"></div>
+          <div id="power-up-status" class="power-up-status" aria-live="polite"></div>
         </div>
         <div class="hud-actions">
           <button id="pause-button" class="btn">Pause</button>
@@ -37,8 +41,32 @@
       <section id="menu-panels" class="menu-panels">
         <div id="intro-panel" class="menu-card">
           <h2 class="menu-title">Leaderboard</h2>
+          <p id="intro-leaderboard-difficulty" class="leaderboard-subtitle"></p>
+          <div class="leaderboard-controls">
+            <div class="leaderboard-tabs" data-view="intro" role="tablist">
+              <button type="button" class="leaderboard-tab" data-difficulty="easy">Easy</button>
+              <button type="button" class="leaderboard-tab" data-difficulty="medium">Medium</button>
+              <button type="button" class="leaderboard-tab" data-difficulty="hard">Hard</button>
+            </div>
+            <button id="view-leaderboards-button" type="button" class="btn">View Leaderboards</button>
+          </div>
           <ol id="intro-leaderboard" class="leaderboard-list"></ol>
-          <button id="start-button" class="btn primary">Start Game</button>
+          <div class="controls">
+            <button id="start-button" class="btn primary">Start Game</button>
+          </div>
+        </div>
+        <div id="leaderboard-panel" class="menu-card hidden">
+          <h2 class="menu-title">Leaderboards</h2>
+          <p id="leaderboard-panel-difficulty" class="leaderboard-subtitle"></p>
+          <div class="leaderboard-tabs" data-view="panel" role="tablist">
+            <button type="button" class="leaderboard-tab" data-difficulty="easy">Easy</button>
+            <button type="button" class="leaderboard-tab" data-difficulty="medium">Medium</button>
+            <button type="button" class="leaderboard-tab" data-difficulty="hard">Hard</button>
+          </div>
+          <ol id="panel-leaderboard" class="leaderboard-list leaderboard-scroll"></ol>
+          <div class="controls">
+            <button id="leaderboard-back-button" class="btn">Back</button>
+          </div>
         </div>
         <div id="settings-panel" class="menu-card hidden">
           <h2 class="menu-title">Game Settings</h2>
@@ -78,6 +106,7 @@
         </div>
         <div id="postgame-panel" class="menu-card hidden">
           <h2 class="menu-title">Leaderboard</h2>
+          <p id="postgame-leaderboard-difficulty" class="leaderboard-subtitle"></p>
           <ol id="postgame-leaderboard" class="leaderboard-list"></ol>
           <button id="play-again-button" class="btn primary">Play Again</button>
         </div>

@@ -3,6 +3,7 @@ const boardWrapper = document.querySelector('.board-wrapper');
 const ctx = canvas.getContext('2d');
 const scoreValue = document.getElementById('score-value');
 const highScoreValue = document.getElementById('high-score-value');
+const highScoreDifficultyLabel = document.getElementById('high-score-difficulty-label');
 const startButton = document.getElementById('start-button');
 const pauseButton = document.getElementById('pause-button');
 const modeSelect = document.getElementById('mode-select');
@@ -16,15 +17,24 @@ const orientationGuard = document.getElementById('orientation-guard');
 const orientationGuardTitle = document.getElementById('orientation-guard-title');
 const orientationGuardMessage = document.getElementById('orientation-guard-message');
 const introLeaderboardList = document.getElementById('intro-leaderboard');
+const panelLeaderboardList = document.getElementById('panel-leaderboard');
 const postgameLeaderboardList = document.getElementById('postgame-leaderboard');
 const settingsForm = document.getElementById('settings-form');
 const settingsBackButton = document.getElementById('settings-back-button');
 const playAgainButton = document.getElementById('play-again-button');
 const difficultyDescription = document.getElementById('difficulty-description');
 const introPanel = document.getElementById('intro-panel');
+const leaderboardPanel = document.getElementById('leaderboard-panel');
 const settingsPanel = document.getElementById('settings-panel');
 const postGamePanel = document.getElementById('postgame-panel');
 const bonusIndicator = document.getElementById('bonus-indicator');
+const powerUpStatus = document.getElementById('power-up-status');
+const viewLeaderboardsButton = document.getElementById('view-leaderboards-button');
+const leaderboardBackButton = document.getElementById('leaderboard-back-button');
+const introLeaderboardDifficultyLabel = document.getElementById('intro-leaderboard-difficulty');
+const panelLeaderboardDifficultyLabel = document.getElementById('leaderboard-panel-difficulty');
+const postgameLeaderboardDifficultyLabel = document.getElementById('postgame-leaderboard-difficulty');
+const leaderboardTabGroups = document.querySelectorAll('.leaderboard-tabs');
 
 const BASE_CELL_SIZE = 32;
 const LEADERBOARD_CACHE_KEY = 'snake-leaderboard-cache';
@@ -83,6 +93,121 @@ const BONUS_TYPES = [
     durationScale: 0.6,
   },
 ];
+
+const POWER_UP_TRIGGER_STREAK = 5;
+const POWER_UP_MAX_ACTIVE = 2;
+const DEFAULT_POWER_UP_LIFETIME_STEPS = 150;
+const POWER_UP_ALLOWED_DIFFICULTIES = new Set(['medium', 'hard']);
+const POWER_UP_TYPES = {
+  'invincible': {
+    kind: 'invincible',
+    name: 'Invincible',
+    label: '⛨',
+    colors: ['rgba(112, 255, 119, 0.95)', 'rgba(110, 245, 255, 0.95)'],
+    glow: 'rgba(110, 245, 255, 0.45)',
+    outline: 'rgba(210, 255, 224, 0.8)',
+    durationMs: 30000,
+    lifetimeSteps: DEFAULT_POWER_UP_LIFETIME_STEPS,
+  },
+  'tail-cut': {
+    kind: 'tail-cut',
+    name: 'Tail Saver',
+    label: '✂️',
+    colors: ['rgba(255, 215, 99, 0.95)', 'rgba(255, 110, 196, 0.95)'],
+    glow: 'rgba(255, 215, 99, 0.45)',
+    outline: 'rgba(255, 240, 210, 0.85)',
+    charges: 1,
+    lifetimeSteps: DEFAULT_POWER_UP_LIFETIME_STEPS,
+  },
+};
+const POWER_UP_SEQUENCE = ['invincible', 'tail-cut'];
+
+function getTimestamp() {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now();
+}
+
+function getPowerUpType(kind) {
+  return POWER_UP_TYPES[kind] || POWER_UP_TYPES['invincible'];
+}
+
+function createInitialPowerUpEffects() {
+  return {
+    'invincible': {
+      active: false,
+      expiresAt: 0,
+      durationMs: getPowerUpType('invincible').durationMs ?? 30000,
+    },
+    'tail-cut': {
+      charges: 0,
+    },
+  };
+}
+
+function ensurePowerUpEffects(currentState = state) {
+  if (!currentState.powerUpEffects) {
+    currentState.powerUpEffects = createInitialPowerUpEffects();
+  }
+  if (!currentState.powerUpEffects['invincible']) {
+    currentState.powerUpEffects['invincible'] = {
+      active: false,
+      expiresAt: 0,
+      durationMs: getPowerUpType('invincible').durationMs ?? 30000,
+    };
+  }
+  if (!currentState.powerUpEffects['tail-cut']) {
+    currentState.powerUpEffects['tail-cut'] = { charges: 0 };
+  }
+  return currentState.powerUpEffects;
+}
+
+function refreshPowerUpEffects(currentState = state) {
+  const effects = ensurePowerUpEffects(currentState);
+  if (effects['invincible'].active && effects['invincible'].expiresAt) {
+    if (getTimestamp() >= effects['invincible'].expiresAt) {
+      effects['invincible'].active = false;
+      effects['invincible'].expiresAt = 0;
+    }
+  }
+  return effects;
+}
+
+function activateInvincibility(durationMs, currentState = state) {
+  const effects = ensurePowerUpEffects(currentState);
+  const config = getPowerUpType('invincible');
+  const duration = Math.max(1000, durationMs || config.durationMs || 30000);
+  const now = getTimestamp();
+  effects['invincible'].active = true;
+  effects['invincible'].expiresAt = now + duration;
+  effects['invincible'].durationMs = duration;
+}
+
+function isInvincibilityActive(currentState = state) {
+  const effects = refreshPowerUpEffects(currentState);
+  return Boolean(effects['invincible'].active);
+}
+
+function addTailShieldCharges(count, currentState = state) {
+  const effects = ensurePowerUpEffects(currentState);
+  const next = Math.max(0, (effects['tail-cut'].charges || 0) + count);
+  effects['tail-cut'].charges = next;
+  return next;
+}
+
+function consumeTailShield(currentState = state) {
+  const effects = ensurePowerUpEffects(currentState);
+  if ((effects['tail-cut'].charges || 0) > 0) {
+    effects['tail-cut'].charges -= 1;
+    return true;
+  }
+  return false;
+}
+
+function getTailShieldCharges(currentState = state) {
+  const effects = ensurePowerUpEffects(currentState);
+  return effects['tail-cut'].charges || 0;
+}
 
 function chooseBonusType() {
   const totalWeight = BONUS_TYPES.reduce((sum, type) => sum + (type.weight ?? 1), 0);
@@ -219,15 +344,21 @@ const UI_STATES = {
   SETTINGS: 'settings',
   RUNNING: 'running',
   POSTGAME: 'postgame',
+  LEADERBOARD: 'leaderboard',
 };
 
 const LEGACY_HIGH_SCORE_KEY = 'snake-high-score';
 const PLAYER_NAME_STORAGE_KEY = 'snake-player-name';
 const LEADERBOARD_MAX_ENTRIES = 100;
 const LEADERBOARD_TOP_DISPLAY_COUNT = 10;
+const LEADERBOARD_DIFFICULTIES = ['easy', 'medium', 'hard'];
 
 let uiState = UI_STATES.INTRO;
-let leaderboard = [];
+let leaderboards = createEmptyLeaderboards();
+let leaderboardViewState = {
+  intro: settings.difficulty || 'easy',
+  panel: settings.difficulty || 'easy',
+};
 let state = null;
 let lockedOrientation = null;
 let orientationPauseActive = false;
@@ -260,6 +391,9 @@ function setUIState(next) {
   if (introPanel) {
     introPanel.classList.toggle('hidden', next !== UI_STATES.INTRO);
   }
+  if (leaderboardPanel) {
+    leaderboardPanel.classList.toggle('hidden', next !== UI_STATES.LEADERBOARD);
+  }
   if (settingsPanel) {
     settingsPanel.classList.toggle('hidden', next !== UI_STATES.SETTINGS);
   }
@@ -272,6 +406,10 @@ function setUIState(next) {
     if (playerNameInput) {
       playerNameInput.focus();
     }
+  }
+
+  if (next === UI_STATES.LEADERBOARD) {
+    renderFullLeaderboard();
   }
 
   if (next === UI_STATES.RUNNING) {
@@ -608,6 +746,12 @@ function applySettingsToState() {
   state.obstacleCount = config.obstacleCount ?? 0;
   state.obstacleChangeInterval = config.obstacleChangeInterval ?? Infinity;
   state.foodPoints = config.basePoints;
+  if (!Array.isArray(state.powerUps)) {
+    state.powerUps = [];
+  }
+  state.powerUpLifetimeSteps = state.powerUpLifetimeSteps ?? DEFAULT_POWER_UP_LIFETIME_STEPS;
+  const effects = ensurePowerUpEffects(state);
+  effects['invincible'].durationMs = getPowerUpType('invincible').durationMs ?? effects['invincible'].durationMs;
   if (!state.running || state.mode === 'constant') {
     state.baseSpeed = interval;
     state.speed = interval;
@@ -645,6 +789,11 @@ function createInitialState() {
     bonusMinGapSteps: config.bonusMinGapSteps ?? DEFAULT_BONUS_MIN_GAP_STEPS,
     bonusValueMultiplier: config.bonusValueMultiplier ?? 1,
     bonusStreaks: createBonusStreaks(),
+    powerUps: [],
+    powerUpLifetimeSteps: DEFAULT_POWER_UP_LIFETIME_STEPS,
+    powerUpEffects: createInitialPowerUpEffects(),
+    consecutiveBonusPickups: 0,
+    nextPowerUpIndex: 0,
     pendingGrowth: 0,
     score: 0,
     speed: baseSpeed,
@@ -722,6 +871,9 @@ function maybeShuffleObstacles() {
   if (state.bonus) {
     blocked.push(state.bonus.position);
   }
+  if (state.powerUps && state.powerUps.length > 0) {
+    state.powerUps.forEach((powerUp) => blocked.push(powerUp.position));
+  }
   state.obstacles = generateObstacles(targetCount, blocked);
   state.obstacleCount = targetCount;
 }
@@ -738,6 +890,103 @@ function spawnBonus(occupied, currentState = state) {
     type,
     remainingSteps: getBonusDurationForType(type, currentState),
   };
+}
+
+function spawnPowerUp(kind, occupied, currentState = state) {
+  const config = getPowerUpType(kind);
+  const position = findAvailableCell(occupied);
+  if (!position) {
+    return null;
+  }
+  const lifetime = Number.isFinite(config.lifetimeSteps)
+    ? config.lifetimeSteps
+    : currentState?.powerUpLifetimeSteps ?? DEFAULT_POWER_UP_LIFETIME_STEPS;
+  return {
+    kind: config.kind,
+    position,
+    remainingSteps: Math.max(1, Math.round(lifetime)),
+  };
+}
+
+function trySpawnNextPowerUp(currentState = state) {
+  if (!currentState || !POWER_UP_ALLOWED_DIFFICULTIES.has(currentState.difficulty)) {
+    return false;
+  }
+  if (!Array.isArray(currentState.powerUps)) {
+    currentState.powerUps = [];
+  }
+  if (currentState.powerUps.length >= POWER_UP_MAX_ACTIVE) {
+    return false;
+  }
+  const nextIndex = currentState.nextPowerUpIndex || 0;
+  const sequenceLength = POWER_UP_SEQUENCE.length;
+  const kind = POWER_UP_SEQUENCE[nextIndex % sequenceLength];
+  if (currentState.powerUps.some((powerUp) => powerUp.kind === kind)) {
+    return false;
+  }
+  const blocked = [
+    ...currentState.snake,
+    currentState.food,
+    ...(currentState.obstacles ?? []),
+  ];
+  if (currentState.bonus) {
+    blocked.push(currentState.bonus.position);
+  }
+  if (currentState.powerUps.length > 0) {
+    currentState.powerUps.forEach((powerUp) => blocked.push(powerUp.position));
+  }
+  const spawned = spawnPowerUp(kind, blocked, currentState);
+  if (!spawned) {
+    return false;
+  }
+  currentState.powerUps.push(spawned);
+  currentState.nextPowerUpIndex = (nextIndex + 1) % sequenceLength;
+  return true;
+}
+
+function updateActivePowerUps() {
+  if (!state || !Array.isArray(state.powerUps) || state.powerUps.length === 0) {
+    return;
+  }
+  const remaining = [];
+  state.powerUps.forEach((powerUp) => {
+    if (!powerUp) {
+      return;
+    }
+    if (Number.isFinite(powerUp.remainingSteps)) {
+      powerUp.remainingSteps -= 1;
+    }
+    if (!Number.isFinite(powerUp.remainingSteps) || powerUp.remainingSteps > 0) {
+      remaining.push(powerUp);
+    }
+  });
+  state.powerUps = remaining;
+}
+
+function applyPowerUpEffect(powerUp) {
+  if (!powerUp) {
+    return;
+  }
+  const config = getPowerUpType(powerUp.kind);
+  if (powerUp.kind === 'invincible') {
+    activateInvincibility(config.durationMs, state);
+    pulseBoard();
+  } else if (powerUp.kind === 'tail-cut') {
+    addTailShieldCharges(config.charges ?? 1, state);
+  }
+}
+
+function detectCollisions(position) {
+  const result = { selfIndex: -1, obstacleIndex: -1 };
+  result.selfIndex = state.snake.findIndex(
+    (segment) => segment.x === position.x && segment.y === position.y,
+  );
+  if (state.obstacles && state.obstacles.length > 0) {
+    result.obstacleIndex = state.obstacles.findIndex(
+      (obstacle) => obstacle.x === position.x && obstacle.y === position.y,
+    );
+  }
+  return result;
 }
 
 function resetGame({ showIntroOverlay = false } = {}) {
@@ -838,18 +1087,104 @@ function updateBonusIndicator() {
 function updateScoreboard() {
   const currentScore = state ? state.score : 0;
   scoreValue.textContent = formatScore(currentScore);
-  const topScore = leaderboard[0];
+
+  const difficultyKey = state ? state.difficulty : settings.difficulty;
+  const normalizedDifficulty = ensureDifficulty(difficultyKey);
+  const entries = getLeaderboardEntriesForDifficulty(normalizedDifficulty);
+  const topScore = entries[0];
   highScoreValue.textContent = topScore ? formatScore(topScore.score) : '0';
+
+  if (highScoreDifficultyLabel) {
+    const label = getDifficultyConfig(normalizedDifficulty).label;
+    highScoreDifficultyLabel.textContent = label ? `(${label})` : '';
+  }
+
   updateBonusIndicator();
-  renderIntroLeaderboard();
+  updatePowerUpStatus();
+
+  if (uiState === UI_STATES.INTRO) {
+    renderIntroLeaderboard();
+  } else if (uiState === UI_STATES.LEADERBOARD) {
+    renderFullLeaderboard();
+  }
 }
 
-function saveCachedLeaderboard(entries) {
+function saveCachedLeaderboards(data) {
   try {
-    localStorage.setItem(LEADERBOARD_CACHE_KEY, JSON.stringify(entries));
+    const payload = {};
+    LEADERBOARD_DIFFICULTIES.forEach((difficulty) => {
+      payload[difficulty] = normalizeLeaderboardEntries(
+        getLeaderboardEntriesForDifficulty(difficulty, data),
+      );
+    });
+    localStorage.setItem(LEADERBOARD_CACHE_KEY, JSON.stringify(payload));
   } catch (error) {
     // Ignore storage errors (e.g., Safari private mode).
   }
+}
+
+function updatePowerUpStatus() {
+  if (!powerUpStatus) {
+    return;
+  }
+  powerUpStatus.innerHTML = '';
+  if (!state) {
+    return;
+  }
+
+  const effects = refreshPowerUpEffects(state);
+  const badges = [];
+
+  if (effects['invincible'].active) {
+    const config = getPowerUpType('invincible');
+    const remainingMs = Math.max(0, (effects['invincible'].expiresAt || 0) - getTimestamp());
+    const remainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+    badges.push({
+      kind: 'invincible',
+      icon: config.label || '⛨',
+      label: config.name || 'Invincible',
+      value: `${remainingSeconds}s`,
+    });
+  }
+
+  const tailCharges = effects['tail-cut'].charges || 0;
+  if (tailCharges > 0) {
+    const config = getPowerUpType('tail-cut');
+    badges.push({
+      kind: 'tail-cut',
+      icon: config.label || '✂️',
+      label: config.name || 'Tail Saver',
+      value: `x${tailCharges}`,
+    });
+  }
+
+  if (badges.length === 0) {
+    powerUpStatus.textContent = '';
+    return;
+  }
+
+  badges.forEach((badge) => {
+    const element = document.createElement('div');
+    element.className = 'power-up-badge';
+    element.dataset.kind = badge.kind;
+
+    const icon = document.createElement('span');
+    icon.className = 'power-up-icon';
+    icon.textContent = badge.icon;
+    element.append(icon);
+
+    const label = document.createElement('span');
+    label.className = 'power-up-label';
+    label.textContent = badge.label;
+    element.append(label);
+
+    const value = document.createElement('span');
+    value.className = 'power-up-value';
+    value.textContent = badge.value;
+    element.append(value);
+
+    powerUpStatus.append(element);
+  });
 }
 
 function sanitizeName(value) {
@@ -882,6 +1217,88 @@ function normalizeLeaderboardEntry(entry) {
   };
 }
 
+function normalizeLeaderboardEntries(entries) {
+  if (!Array.isArray(entries)) {
+    return [];
+  }
+  return entries
+    .map(normalizeLeaderboardEntry)
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, LEADERBOARD_MAX_ENTRIES);
+}
+
+function createEmptyLeaderboards() {
+  const empty = {};
+  LEADERBOARD_DIFFICULTIES.forEach((difficulty) => {
+    empty[difficulty] = [];
+  });
+  return empty;
+}
+
+function normalizeLeaderboardMap(value) {
+  const normalized = createEmptyLeaderboards();
+  if (!value || typeof value !== 'object') {
+    return normalized;
+  }
+  LEADERBOARD_DIFFICULTIES.forEach((difficulty) => {
+    normalized[difficulty] = normalizeLeaderboardEntries(value[difficulty]);
+  });
+  return normalized;
+}
+
+function getLeaderboardEntriesForDifficulty(difficulty, source = leaderboards) {
+  const key = ensureDifficulty(difficulty);
+  const entries = source && source[key];
+  return Array.isArray(entries) ? entries : [];
+}
+
+function setLeaderboardEntriesForDifficulty(difficulty, entries, target = leaderboards) {
+  const key = ensureDifficulty(difficulty);
+  target[key] = normalizeLeaderboardEntries(entries);
+  return target[key];
+}
+
+function countLeaderboardEntries(target = leaderboards) {
+  return LEADERBOARD_DIFFICULTIES.reduce(
+    (total, difficulty) => total + getLeaderboardEntriesForDifficulty(difficulty, target).length,
+    0,
+  );
+}
+
+function updateLeaderboardTabsForView(view, activeDifficulty) {
+  if (!leaderboardTabGroups || leaderboardTabGroups.length === 0) {
+    return;
+  }
+  const normalized = ensureDifficulty(activeDifficulty);
+  leaderboardTabGroups.forEach((group) => {
+    if (group.dataset.view !== view) {
+      return;
+    }
+    const buttons = group.querySelectorAll('.leaderboard-tab');
+    buttons.forEach((button) => {
+      const buttonDifficulty = ensureDifficulty(button.dataset.difficulty);
+      const isActive = buttonDifficulty === normalized;
+      button.classList.toggle('active', isActive);
+      button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+  });
+}
+
+function setLeaderboardViewDifficulty(view, difficulty, { render = true } = {}) {
+  const normalized = ensureDifficulty(difficulty);
+  leaderboardViewState[view] = normalized;
+  updateLeaderboardTabsForView(view, normalized);
+  if (!render) {
+    return;
+  }
+  if (view === 'intro') {
+    renderIntroLeaderboard();
+  } else if (view === 'panel') {
+    renderFullLeaderboard();
+  }
+}
+
 function isSameLeaderboardEntry(a, b) {
   if (!a || !b) {
     return false;
@@ -896,17 +1313,22 @@ function isSameLeaderboardEntry(a, b) {
   return true;
 }
 
-function loadCachedLeaderboard() {
+function loadCachedLeaderboards() {
+  const fallback = createEmptyLeaderboards();
   try {
     const stored = localStorage.getItem(LEADERBOARD_CACHE_KEY);
     if (stored) {
       const parsed = JSON.parse(stored);
       if (Array.isArray(parsed)) {
-        return parsed
-          .map(normalizeLeaderboardEntry)
-          .filter(Boolean)
-          .sort((a, b) => b.score - a.score)
-          .slice(0, LEADERBOARD_MAX_ENTRIES);
+        fallback.easy = normalizeLeaderboardEntries(parsed);
+        return fallback;
+      }
+      if (parsed && typeof parsed === 'object') {
+        const normalized = normalizeLeaderboardMap(parsed);
+        if (countLeaderboardEntries(normalized) > 0) {
+          return normalized;
+        }
+        return normalized;
       }
     }
   } catch (error) {
@@ -922,11 +1344,12 @@ function loadCachedLeaderboard() {
         difficulty: 'easy',
       },
     ];
-    saveCachedLeaderboard(legacyLeaderboard);
-    return legacyLeaderboard;
+    fallback.easy = normalizeLeaderboardEntries(legacyLeaderboard);
+    saveCachedLeaderboards(fallback);
+    return fallback;
   }
 
-  return [];
+  return fallback;
 }
 
 function loadStoredPlayerName() {
@@ -949,48 +1372,71 @@ function persistPlayerName(name) {
   }
 }
 
+async function fetchLeaderboardForDifficulty(difficulty, limit = LEADERBOARD_MAX_ENTRIES) {
+  const params = new URLSearchParams({
+    limit: String(Math.max(1, Math.min(limit, LEADERBOARD_MAX_ENTRIES))),
+    difficulty,
+  });
+  const response = await fetch(`/api/leaderboard?${params.toString()}`, {
+    headers: {
+      Accept: 'application/json',
+    },
+    cache: 'no-store',
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load ${difficulty} leaderboard: ${response.status}`);
+  }
+  const payload = await response.json();
+  if (!payload || !Array.isArray(payload.entries)) {
+    throw new Error(`Malformed leaderboard response for ${difficulty}`);
+  }
+  return normalizeLeaderboardEntries(payload.entries);
+}
+
 async function refreshLeaderboardFromServer({ allowFallback = false } = {}) {
   try {
-    const response = await fetch('/api/leaderboard?limit=100', {
-      headers: {
-        Accept: 'application/json',
-      },
-      cache: 'no-store',
+    const requests = LEADERBOARD_DIFFICULTIES.map((difficulty) =>
+      fetchLeaderboardForDifficulty(difficulty).then((entries) => [difficulty, entries]),
+    );
+    const results = await Promise.allSettled(requests);
+    const nextLeaderboards = createEmptyLeaderboards();
+    let successful = 0;
+    results.forEach((result) => {
+      if (result.status === 'fulfilled') {
+        const [difficulty, entries] = result.value;
+        nextLeaderboards[difficulty] = entries;
+        successful += 1;
+      } else {
+        console.error(result.reason);
+      }
     });
-    if (!response.ok) {
-      throw new Error(`Failed to load leaderboard: ${response.status}`);
+    if (successful === 0) {
+      throw new Error('Unable to load leaderboard data');
     }
-    const payload = await response.json();
-    if (!payload || !Array.isArray(payload.entries)) {
-      throw new Error('Malformed leaderboard response');
-    }
-    const normalized = payload.entries
-      .map(normalizeLeaderboardEntry)
-      .filter(Boolean)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, LEADERBOARD_MAX_ENTRIES);
-    leaderboard = normalized;
-    saveCachedLeaderboard(leaderboard);
+    leaderboards = nextLeaderboards;
+    saveCachedLeaderboards(leaderboards);
     if (state) {
       updateScoreboard();
     } else {
       renderIntroLeaderboard();
+      renderFullLeaderboard();
     }
-    return leaderboard;
+    return leaderboards;
   } catch (error) {
     console.error(error);
-    if (allowFallback && leaderboard.length === 0) {
-      const cached = loadCachedLeaderboard();
-      if (cached.length > 0) {
-        leaderboard = cached;
+    if (allowFallback && countLeaderboardEntries(leaderboards) === 0) {
+      const cached = loadCachedLeaderboards();
+      if (countLeaderboardEntries(cached) > 0) {
+        leaderboards = cached;
         if (state) {
           updateScoreboard();
         } else {
           renderIntroLeaderboard();
+          renderFullLeaderboard();
         }
       }
     }
-    return leaderboard;
+    return leaderboards;
   }
 }
 
@@ -1012,23 +1458,24 @@ async function submitLeaderboardEntry(entry) {
     throw new Error(`Failed to submit score: ${response.status}`);
   }
   const result = await response.json();
+  const normalizedEntry = normalizeLeaderboardEntry(result.entry) || {
+    ...entry,
+    difficulty: ensureDifficulty(entry.difficulty),
+  };
+  const difficultyKey = ensureDifficulty(normalizedEntry.difficulty);
   const normalizedEntries = Array.isArray(result.entries)
-    ? result.entries
-        .map(normalizeLeaderboardEntry)
-        .filter(Boolean)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, LEADERBOARD_MAX_ENTRIES)
-    : leaderboard;
+    ? normalizeLeaderboardEntries(result.entries)
+    : getLeaderboardEntriesForDifficulty(difficultyKey);
   if (normalizedEntries.length > 0) {
-    leaderboard = normalizedEntries;
-    saveCachedLeaderboard(leaderboard);
-    updateScoreboard();
+    setLeaderboardEntriesForDifficulty(difficultyKey, normalizedEntries);
+    saveCachedLeaderboards(leaderboards);
   }
-  const normalizedEntry = normalizeLeaderboardEntry(result.entry) || entry;
-  const rank = Number.isFinite(result.rank) ? Number(result.rank) : null;
+  updateScoreboard();
   renderIntroLeaderboard();
+  renderFullLeaderboard();
+  const rank = Number.isFinite(result.rank) ? Number(result.rank) : null;
   return {
-    entries: leaderboard,
+    entries: getLeaderboardEntriesForDifficulty(difficultyKey),
     entry: normalizedEntry,
     rank,
   };
@@ -1053,12 +1500,23 @@ function evaluateLeaderboardPlacement(entries, candidate) {
   };
 }
 
-function formatLeaderboardName(entry) {
+function formatLeaderboardName(entry, { includeDifficulty = false } = {}) {
+  if (!entry) {
+    return '';
+  }
+  const baseName = sanitizeName(entry.name) || 'Anonymous';
+  if (!includeDifficulty) {
+    return baseName;
+  }
   const difficultyLabel = getDifficultyConfig(entry.difficulty).label;
-  return `${entry.name} (${difficultyLabel})`;
+  return `${baseName} (${difficultyLabel})`;
 }
 
-function createLeaderboardItem(entry, position, { highlight = false, spaced = false } = {}) {
+function createLeaderboardItem(
+  entry,
+  position,
+  { highlight = false, spaced = false, includeDifficulty = false } = {},
+) {
   const item = document.createElement('li');
   item.className = 'leaderboard-item';
   if (highlight) {
@@ -1075,7 +1533,7 @@ function createLeaderboardItem(entry, position, { highlight = false, spaced = fa
 
   const nameSpan = document.createElement('span');
   nameSpan.className = 'name';
-  nameSpan.textContent = formatLeaderboardName(entry);
+  nameSpan.textContent = formatLeaderboardName(entry, { includeDifficulty });
   item.append(nameSpan);
 
   const scoreSpan = document.createElement('span');
@@ -1091,8 +1549,22 @@ function renderIntroLeaderboard() {
     return;
   }
 
+  const normalizedDifficulty = ensureDifficulty(
+    leaderboardViewState.intro || settings.difficulty || 'easy',
+  );
+  leaderboardViewState.intro = normalizedDifficulty;
+  updateLeaderboardTabsForView('intro', normalizedDifficulty);
+
+  if (introLeaderboardDifficultyLabel) {
+    const label = getDifficultyConfig(normalizedDifficulty).label;
+    introLeaderboardDifficultyLabel.textContent = `Top Scores — ${label}`;
+  }
+
   introLeaderboardList.innerHTML = '';
-  const entries = leaderboard.slice(0, LEADERBOARD_TOP_DISPLAY_COUNT);
+  const entries = getLeaderboardEntriesForDifficulty(normalizedDifficulty).slice(
+    0,
+    LEADERBOARD_TOP_DISPLAY_COUNT,
+  );
   if (entries.length === 0) {
     const placeholder = document.createElement('li');
     placeholder.className = 'leaderboard-item';
@@ -1104,7 +1576,8 @@ function renderIntroLeaderboard() {
 
     const name = document.createElement('span');
     name.className = 'name';
-    name.textContent = 'No high scores yet';
+    const label = getDifficultyConfig(normalizedDifficulty).label;
+    name.textContent = `No ${label} scores yet`;
     placeholder.append(name);
 
     const score = document.createElement('span');
@@ -1121,13 +1594,68 @@ function renderIntroLeaderboard() {
   });
 }
 
-function renderPostGameLeaderboard(topEntries, currentEntry, rank) {
+function renderFullLeaderboard() {
+  if (!panelLeaderboardList) {
+    return;
+  }
+
+  const normalizedDifficulty = ensureDifficulty(
+    leaderboardViewState.panel || settings.difficulty || 'easy',
+  );
+  leaderboardViewState.panel = normalizedDifficulty;
+  updateLeaderboardTabsForView('panel', normalizedDifficulty);
+
+  if (panelLeaderboardDifficultyLabel) {
+    const label = getDifficultyConfig(normalizedDifficulty).label;
+    panelLeaderboardDifficultyLabel.textContent = `${label} Difficulty`;
+  }
+
+  panelLeaderboardList.innerHTML = '';
+  const entries = getLeaderboardEntriesForDifficulty(normalizedDifficulty);
+  if (entries.length === 0) {
+    const placeholder = document.createElement('li');
+    placeholder.className = 'leaderboard-item';
+
+    const position = document.createElement('span');
+    position.className = 'position';
+    position.textContent = '—';
+    placeholder.append(position);
+
+    const name = document.createElement('span');
+    name.className = 'name';
+    const label = getDifficultyConfig(normalizedDifficulty).label;
+    name.textContent = `No ${label} scores yet`;
+    placeholder.append(name);
+
+    const score = document.createElement('span');
+    score.className = 'score';
+    score.textContent = '—';
+    placeholder.append(score);
+
+    panelLeaderboardList.append(placeholder);
+    return;
+  }
+
+  entries.forEach((entry, index) => {
+    panelLeaderboardList.append(createLeaderboardItem(entry, index + 1));
+  });
+}
+
+function renderPostGameLeaderboard(topEntries, currentEntry, rank, difficulty) {
   if (!postgameLeaderboardList) {
     return;
   }
 
   postgameLeaderboardList.innerHTML = '';
   const seenPositions = new Set();
+
+  const normalizedDifficulty = ensureDifficulty(
+    difficulty || (currentEntry ? currentEntry.difficulty : state?.difficulty) || 'easy',
+  );
+  if (postgameLeaderboardDifficultyLabel) {
+    const label = getDifficultyConfig(normalizedDifficulty).label;
+    postgameLeaderboardDifficultyLabel.textContent = `${label} Difficulty`;
+  }
 
   if (topEntries.length === 0 && !currentEntry) {
     const placeholder = document.createElement('li');
@@ -1231,18 +1759,22 @@ function endGame() {
       score: state.score,
       difficulty: state.difficulty,
     };
-    placement = evaluateLeaderboardPlacement(leaderboard, candidate);
+    const difficultyKey = ensureDifficulty(state.difficulty);
+    const difficultyEntries = getLeaderboardEntriesForDifficulty(difficultyKey);
+    placement = evaluateLeaderboardPlacement(difficultyEntries, candidate);
     if (placement.qualifies) {
-      leaderboard = placement.updated;
-      saveCachedLeaderboard(leaderboard);
+      setLeaderboardEntriesForDifficulty(difficultyKey, placement.updated);
+      saveCachedLeaderboards(leaderboards);
     }
     rank = placement.rank;
     currentEntry = placement.candidateEntry;
   }
 
-  const sortedForDisplay = placement ? placement.sorted : leaderboard;
+  const displayDifficulty = ensureDifficulty(state.difficulty);
+  const baselineEntries = getLeaderboardEntriesForDifficulty(displayDifficulty);
+  const sortedForDisplay = placement ? placement.sorted : baselineEntries;
   const topEntries = sortedForDisplay.slice(0, 3);
-  renderPostGameLeaderboard(topEntries, currentEntry, rank);
+  renderPostGameLeaderboard(topEntries, currentEntry, rank, displayDifficulty);
 
   setUIState(UI_STATES.POSTGAME);
 
@@ -1257,8 +1789,12 @@ function endGame() {
         }
         const resolvedRank = typeof result.rank === 'number' ? result.rank : rank;
         const resolvedEntry = result.entry || currentEntry || candidate;
-        const displayEntries = (result.entries || leaderboard).slice(0, 3);
-        renderPostGameLeaderboard(displayEntries, resolvedEntry, resolvedRank);
+        const difficultyKey = ensureDifficulty(resolvedEntry.difficulty || state.difficulty);
+        const displayEntries = (result.entries || getLeaderboardEntriesForDifficulty(difficultyKey)).slice(
+          0,
+          3,
+        );
+        renderPostGameLeaderboard(displayEntries, resolvedEntry, resolvedRank, difficultyKey);
         const updatedMessage = buildGameOverMessage(state.score, resolvedRank, baseMessage);
         overlayMessage.textContent = updatedMessage;
       })
@@ -1283,12 +1819,16 @@ function gameLoop(timestamp) {
 }
 
 function step() {
+  refreshPowerUpEffects();
+  updateActivePowerUps();
+
   if (state.bonus) {
     state.bonus.remainingSteps -= 1;
     if (state.bonus.remainingSteps <= 0) {
       const expiredType = state.bonus.type.kind;
       state.bonus = null;
       state.bonusTimer = state.bonusMinGapSteps;
+      state.consecutiveBonusPickups = 0;
       resetBonusStreak(state.bonusStreaks, expiredType);
     }
   } else {
@@ -1298,6 +1838,9 @@ function step() {
     if (!state.bonus && state.bonusTimer <= 0) {
       const shouldSpawn = Math.random() < (state.bonusChance ?? 0);
       const occupied = [...state.snake, state.food, ...(state.obstacles ?? [])];
+      if (state.powerUps && state.powerUps.length > 0) {
+        state.powerUps.forEach((powerUp) => occupied.push(powerUp.position));
+      }
       const bonus = shouldSpawn ? spawnBonus(occupied, state) : null;
       if (bonus) {
         state.bonus = bonus;
@@ -1317,12 +1860,41 @@ function step() {
   newHead.x = (newHead.x + gridColumns) % gridColumns;
   newHead.y = (newHead.y + gridRows) % gridRows;
 
-  if (isCollision(newHead)) {
+  const collision = detectCollisions(newHead);
+  const invincibleActive = isInvincibilityActive();
+  let tailShieldTriggered = false;
+  let skipTailRemoval = false;
+
+  if (collision.obstacleIndex !== -1 && !invincibleActive) {
     endGame();
     return;
   }
 
+  if (collision.selfIndex !== -1) {
+    const consumed = consumeTailShield();
+    if (!consumed) {
+      endGame();
+      return;
+    }
+    tailShieldTriggered = true;
+  }
+
   state.snake.unshift(newHead);
+
+  if (collision.obstacleIndex !== -1 && invincibleActive && state.obstacles) {
+    const removed = state.obstacles.splice(collision.obstacleIndex, 1);
+    state.obstacleCount = state.obstacles.length;
+    if (removed.length > 0) {
+      pulseBoard();
+    }
+  }
+
+  if (tailShieldTriggered) {
+    const cutIndex = collision.selfIndex + 1;
+    state.snake.splice(cutIndex);
+    skipTailRemoval = true;
+    pulseBoard();
+  }
 
   if (newHead.x === state.food.x && newHead.y === state.food.y) {
     state.score += state.foodPoints;
@@ -1331,6 +1903,9 @@ function step() {
     const blocked = [...(state.obstacles ?? [])];
     if (state.bonus) {
       blocked.push(state.bonus.position);
+    }
+    if (state.powerUps && state.powerUps.length > 0) {
+      state.powerUps.forEach((powerUp) => blocked.push(powerUp.position));
     }
     state.food = spawnFood(state.snake, blocked);
     if (state.mode === 'progressive') {
@@ -1367,28 +1942,36 @@ function step() {
     incrementBonusStreak(state.bonusStreaks, type.kind);
     state.bonus = null;
     state.bonusTimer = state.bonusMinGapSteps;
+    state.consecutiveBonusPickups += 1;
+    if (POWER_UP_ALLOWED_DIFFICULTIES.has(state.difficulty)) {
+      if (state.consecutiveBonusPickups >= POWER_UP_TRIGGER_STREAK) {
+        const spawned = trySpawnNextPowerUp();
+        if (spawned) {
+          state.consecutiveBonusPickups = 0;
+        }
+      }
+    } else {
+      state.consecutiveBonusPickups = 0;
+    }
+  }
+
+  if (state.powerUps && state.powerUps.length > 0) {
+    const index = state.powerUps.findIndex(
+      (powerUp) => powerUp.position.x === newHead.x && powerUp.position.y === newHead.y,
+    );
+    if (index !== -1) {
+      const [collected] = state.powerUps.splice(index, 1);
+      applyPowerUpEffect(collected);
+    }
   }
 
   if (state.pendingGrowth > 0) {
     state.pendingGrowth -= 1;
-  } else {
+  } else if (!skipTailRemoval) {
     state.snake.pop();
   }
 
   updateScoreboard();
-}
-
-function isCollision(position) {
-  const hitsSnake = state.snake.some(
-    (segment) => segment.x === position.x && segment.y === position.y,
-  );
-  if (hitsSnake) {
-    return true;
-  }
-  if (state.obstacles && state.obstacles.some((obstacle) => obstacle.x === position.x && obstacle.y === position.y)) {
-    return true;
-  }
-  return false;
 }
 
 function draw(interpolation = 0) {
@@ -1397,6 +1980,7 @@ function draw(interpolation = 0) {
   drawObstacles();
   drawFood();
   drawBonus();
+  drawPowerUps();
   drawSnake(interpolation);
 }
 
@@ -1506,6 +2090,50 @@ function drawBonus() {
   ctx.fillText(type.label, x + size / 2, y + size / 2 + 1);
 
   ctx.restore();
+}
+
+function drawPowerUps() {
+  if (!state.powerUps || state.powerUps.length === 0) {
+    return;
+  }
+
+  const time = getTimestamp();
+  state.powerUps.forEach((powerUp) => {
+    const config = getPowerUpType(powerUp.kind);
+    const padding = cellSize * 0.2;
+    const baseSize = cellSize - padding * 2;
+    const pulse = 1 + Math.sin(time / 260) * 0.08;
+    const centerX = powerUp.position.x * cellSize + cellSize / 2;
+    const centerY = powerUp.position.y * cellSize + cellSize / 2;
+    const size = Math.max(0, baseSize * pulse);
+    const x = Math.round(centerX - size / 2);
+    const y = Math.round(centerY - size / 2);
+    const colors = config.colors || ['rgba(112, 255, 119, 0.95)', 'rgba(110, 245, 255, 0.95)'];
+    const gradient = ctx.createLinearGradient(x, y, x + size, y + size);
+    gradient.addColorStop(0, colors[0]);
+    gradient.addColorStop(1, colors[colors.length - 1] || colors[0]);
+
+    ctx.save();
+    ctx.shadowBlur = Math.min(30, Math.max(16, cellSize * 0.75));
+    ctx.shadowColor = config.glow || 'rgba(110, 245, 255, 0.45)';
+    ctx.fillStyle = gradient;
+    const radius = Math.min(12, Math.max(8, cellSize * 0.32));
+    pathRoundedRect(ctx, x, y, size, size, radius);
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = config.outline || 'rgba(239, 243, 255, 0.8)';
+    pathRoundedRect(ctx, x, y, size, size, radius);
+    ctx.stroke();
+
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(5, 10, 16, 0.85)';
+    const fontSize = Math.max(16, Math.round(cellSize * 0.55));
+    ctx.font = `700 ${fontSize}px "Inter", "Segoe UI", sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(config.label || '★', x + size / 2, y + size / 2 + 1);
+    ctx.restore();
+  });
 }
 
 function drawSnake(interpolation) {
@@ -1747,12 +2375,44 @@ if (difficultySelect) {
   difficultySelect.addEventListener('change', () => {
     settings.difficulty = difficultySelect.value;
     updateDifficultyDescription();
+    if (state && !state.running) {
+      state.difficulty = settings.difficulty;
+      applySettingsToState();
+      updateScoreboard();
+    }
+    setLeaderboardViewDifficulty('intro', settings.difficulty);
   });
 }
 
 if (playerNameInput) {
   playerNameInput.addEventListener('input', (event) => {
     settings.playerName = event.target.value;
+  });
+}
+
+leaderboardTabGroups.forEach((group) => {
+  const view = group.dataset.view || 'intro';
+  group.addEventListener('click', (event) => {
+    const button = event.target.closest('.leaderboard-tab');
+    if (!button) {
+      return;
+    }
+    const difficulty = ensureDifficulty(button.dataset.difficulty);
+    setLeaderboardViewDifficulty(view, difficulty);
+  });
+});
+
+if (viewLeaderboardsButton) {
+  viewLeaderboardsButton.addEventListener('click', () => {
+    setLeaderboardViewDifficulty('panel', leaderboardViewState.panel || settings.difficulty);
+    setUIState(UI_STATES.LEADERBOARD);
+  });
+}
+
+if (leaderboardBackButton) {
+  leaderboardBackButton.addEventListener('click', () => {
+    setUIState(UI_STATES.INTRO);
+    renderIntroLeaderboard();
   });
 }
 
@@ -1787,15 +2447,19 @@ if (screen.orientation && typeof screen.orientation.addEventListener === 'functi
   window.addEventListener('orientationchange', handleOrientationChange);
 }
 
-leaderboard = loadCachedLeaderboard();
+leaderboards = loadCachedLeaderboards();
+setLeaderboardViewDifficulty('intro', settings.difficulty, { render: false });
+setLeaderboardViewDifficulty('panel', settings.difficulty, { render: false });
 
 refreshBoardGeometry({ force: true, allowDuringGame: true });
 resetGame({ showIntroOverlay: false });
 setUIState(UI_STATES.INTRO);
 enforceOrientationRules({ respectLock: false });
 renderIntroLeaderboard();
+renderFullLeaderboard();
 
-refreshLeaderboardFromServer({ allowFallback: leaderboard.length === 0 });
+const hasCachedLeaderboards = countLeaderboardEntries(leaderboards) > 0;
+refreshLeaderboardFromServer({ allowFallback: !hasCachedLeaderboards });
 
 // Visual pulse when eating food
 const style = document.createElement('style');

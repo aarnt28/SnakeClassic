@@ -113,6 +113,56 @@ body.game-active .app-shell {
   min-height: 2.25rem;
 }
 
+.power-up-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  min-height: 1.75rem;
+}
+
+.power-up-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  background: rgba(20, 26, 38, 0.85);
+  border: 1px solid rgba(112, 255, 119, 0.3);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: rgba(239, 243, 255, 0.85);
+  box-shadow: inset 0 0 0 1px rgba(112, 255, 119, 0.12);
+}
+
+.power-up-badge[data-kind='invincible'] {
+  border-color: rgba(112, 255, 119, 0.55);
+  box-shadow: 0 0 14px rgba(112, 255, 119, 0.3);
+}
+
+.power-up-badge[data-kind='tail-cut'] {
+  border-color: rgba(255, 215, 99, 0.55);
+  box-shadow: 0 0 14px rgba(255, 215, 99, 0.28);
+}
+
+.power-up-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.power-up-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(239, 243, 255, 0.65);
+}
+
+.power-up-value {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+  color: rgba(239, 243, 255, 0.85);
+}
+
 .bonus-indicator-item {
   display: inline-flex;
   align-items: center;
@@ -254,6 +304,15 @@ body.game-active .bonus-indicator {
   color: rgba(239, 243, 255, 0.7);
 }
 
+.metric .label .label-detail {
+  margin-left: 0.35rem;
+  font-size: 0.7rem;
+  letter-spacing: 0;
+  text-transform: none;
+  color: rgba(239, 243, 255, 0.55);
+  font-weight: 500;
+}
+
 .metric .value {
   font-size: 2rem;
   font-weight: 700;
@@ -329,6 +388,78 @@ body.game-active .bonus-indicator {
 
 .menu-card .controls {
   justify-content: flex-end;
+}
+
+.leaderboard-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.leaderboard-controls .btn {
+  min-width: auto;
+}
+
+.leaderboard-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem;
+  border-radius: 999px;
+  background: rgba(12, 18, 28, 0.75);
+  border: 1px solid rgba(110, 245, 255, 0.2);
+  box-shadow: inset 0 0 0 1px rgba(239, 243, 255, 0.05);
+}
+
+.leaderboard-tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: rgba(239, 243, 255, 0.7);
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.leaderboard-tab:hover,
+.leaderboard-tab:focus-visible {
+  color: rgba(239, 243, 255, 0.95);
+  outline: none;
+}
+
+.leaderboard-tab.active {
+  background: rgba(110, 245, 255, 0.15);
+  color: #eff3ff;
+  box-shadow: 0 0 12px rgba(110, 245, 255, 0.25);
+}
+
+.leaderboard-subtitle {
+  margin: 0;
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(239, 243, 255, 0.55);
+}
+
+.leaderboard-scroll {
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.leaderboard-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.leaderboard-scroll::-webkit-scrollbar-thumb {
+  background: rgba(110, 245, 255, 0.3);
+  border-radius: 999px;
 }
 
 .menu-title {

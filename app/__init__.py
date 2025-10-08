@@ -71,8 +71,12 @@ async def read_index() -> str:
 
 
 @app.get("/api/leaderboard", response_model=LeaderboardPayload)
-async def get_leaderboard(limit: int = Query(10, ge=1, le=LEADERBOARD_LIMIT)) -> LeaderboardPayload:
-    entries = await store.get_entries()
+async def get_leaderboard(
+    limit: int = Query(10, ge=1, le=LEADERBOARD_LIMIT),
+    difficulty: str | None = Query(None),
+) -> LeaderboardPayload:
+    difficulty_filter = ensure_difficulty(difficulty) if difficulty else None
+    entries = await store.get_entries(difficulty=difficulty_filter)
     limited = entries[:limit]
     return LeaderboardPayload(entries=limited, total=len(entries))
 
