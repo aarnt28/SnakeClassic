@@ -36,7 +36,7 @@ const panelLeaderboardDifficultyLabel = document.getElementById('leaderboard-pan
 const postgameLeaderboardDifficultyLabel = document.getElementById('postgame-leaderboard-difficulty');
 const leaderboardTabGroups = document.querySelectorAll('.leaderboard-tabs');
 
-const BASE_CELL_SIZE = 32;
+const BASE_CELL_SIZE = 24;
 const LEADERBOARD_CACHE_KEY = 'snake-leaderboard-cache';
 let cellSize = BASE_CELL_SIZE;
 let gridColumns = Math.max(12, Math.round(canvas.width / cellSize));
@@ -69,7 +69,7 @@ const BONUS_TYPES = [
     glow: 'rgba(255, 183, 0, 0.65)',
     outline: 'rgba(255, 245, 224, 0.8)',
     label: '★',
-    weight: 1,
+    weight: 1.75,
   },
   {
     kind: 'growth',
@@ -90,7 +90,7 @@ const BONUS_TYPES = [
     outline: 'rgba(255, 248, 210, 0.85)',
     label: '⚡',
     weight: 0.2,
-    durationScale: 0.6,
+    durationScale: 0.8,
   },
 ];
 
