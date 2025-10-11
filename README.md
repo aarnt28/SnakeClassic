@@ -18,6 +18,76 @@ Power-ups appear one at a time and expire if ignored for too long. Collecting th
 
 The HUD shows active effects and remaining Tail Saver charges so you can plan your route.
 
+## Game Settings Reference
+
+The front-end game loop centralizes its tunable variables near the top of `app/static/game.js`. The following tables summarize their defaults and intent so you can confidently tweak gameplay.
+
+### Board, storage, and UI plumbing
+
+- `BASE_CELL_SIZE` (`24`): Base pixel size each grid cell starts from before responsive scaling adjusts it.
+- `ORIENTATIONS` (`portrait` / `landscape`): Tokens used when reacting to viewport changes and showing the rotation guard.
+- `THEME_STORAGE_KEY` (`snake-theme-preference`): LocalStorage key storing the active light/dark mode selection.
+- `LEADERBOARD_CACHE_KEY` (`snake-leaderboard-cache`): LocalStorage cache bucket for fetched leaderboard results.
+- `LEGACY_HIGH_SCORE_KEY` (`snake-high-score`): Key that migrates scores saved by the original build.
+- `PLAYER_NAME_STORAGE_KEY` (`snake-player-name`): Remembers the last player name entered.
+- `UI_STATES` (`intro`, `settings`, `running`, `postgame`, `leaderboard`): Identifiers that drive which panel is visible at any moment.
+
+### Speed and pacing
+
+- `MIN_SPEED_INTERVAL` (`55 ms`): Fastest allowed movement interval when the snake is fully accelerated.
+- `MAX_SPEED_INTERVAL` (`220 ms`): Slowest allowed interval, used at the start of runs or in constant mode.
+- `SPEED_ACCELERATION` (`2.5 ms`): Amount shaved off the movement interval when leveling up in progressive mode.
+- `SPEED_LEVEL_MIN` / `SPEED_LEVEL_MAX` (`1`–`10`): Bounds for manual testing overrides.
+- `INITIAL_SAFE_PATH_STEPS` (`3`): Number of moves granted before self-collision checks are enforced after spawning.
+
+### Bonus system configuration
+
+- `DEFAULT_BONUS_DURATION_STEPS` (`32`): Baseline lifetime of a bonus pickup, subject to board-size scaling.
+- `BONUS_DURATION_BASELINE_DIMENSION` (`25`) & `BONUS_DURATION_MIN_STEPS` (`12`): Control how lifetimes scale with the average grid size.
+- `DEFAULT_BONUS_MIN_GAP_STEPS` (`8`): Minimum steps that must pass between bonus spawns.
+- `DEFAULT_BONUS_INITIAL_COOLDOWN` (`6` fruit): Delay before the first bonus becomes eligible to spawn.
+- `BONUS_STREAK_INCREMENT` (`0.1`): Additional score multiplier applied per consecutive bonus collected.
+
+**Bonus types (`BONUS_TYPES`):**
+
+| Kind      | Label | Reward / Effect                                                                 | Weight |
+|-----------|-------|-----------------------------------------------------------------------------------|--------|
+| `points`  | `★`   | Flat `30` point bonus in addition to streak multipliers.                         | `1.75` |
+| `growth`  | `⇑`   | Grows the snake by `3` segments on collection.                                   | `1`    |
+| `ultra`   | `⚡`   | Awards `50/100/150` points on Easy/Medium/Hard and respects a `0.8` duration scale.| `0.2` |
+
+### Power-up system configuration
+
+- `POWER_UP_TRIGGER_STREAK` (`5`): Consecutive bonuses required before a power-up spawns.
+- `POWER_UP_MAX_ACTIVE` (`2`): Maximum simultaneous power-ups that may exist on the board.
+- `DEFAULT_POWER_UP_LIFETIME_STEPS` (`150`): Number of steps before an uncollected power-up despawns.
+- `POWER_UP_ALLOWED_DIFFICULTIES` (`medium`, `hard`): Difficulties that enable the streak mechanic.
+- `POWER_UP_DEACTIVATION_FLASH_STEPS` (`20`): Duration HUD icons flash after an effect expires.
+- `POWER_UP_SEQUENCE` (`invincible`, `tail-cut`): Rotation order when multiple power-ups are queued.
+
+**Power-up types (`POWER_UP_TYPES`):**
+
+| Kind         | Label | Effect description                                              | Default lifetime |
+|--------------|-------|----------------------------------------------------------------|------------------|
+| `invincible` | `⛨`   | Grants a `30,000 ms` invulnerability window that is refreshed on pickup.| `150` steps      |
+| `tail-cut`   | `✂️`   | Provides a single tail-saving charge that clears collisions.   | `150` steps      |
+
+### Difficulty presets
+
+`DIFFICULTY_CONFIG` defines the knobs for each difficulty, while `DIFFICULTY_DESCRIPTIONS` supplies the helper text that appears in the UI.
+
+| Difficulty | Speed level | Bonus chance | Bonus gap | First bonus delay | Bonus duration | Value multiplier | Obstacles | Obstacle reshuffle | Base fruit points |
+|------------|-------------|--------------|-----------|-------------------|----------------|------------------|-----------|--------------------|-------------------|
+| Easy       | `2`         | `65%`        | `4` steps | `3` fruit         | `40` steps     | `1.1x`           | `0`       | N/A (`Infinity`)   | `10`              |
+| Medium     | `5`         | `50%`        | `6` steps | `5` fruit         | `36` steps     | `1.15x`          | `4`       | Every `15` fruit   | `25`              |
+| Hard       | `7`         | `38%`        | `6` steps | `5` fruit         | `30` steps     | `1.5x`           | `12`      | Every `10` fruit   | `30`              |
+
+### Leaderboard limits
+
+- `LEADERBOARD_MAX_ENTRIES` (`100`): Total entries stored per difficulty in the persistent database.
+- `LEADERBOARD_TOP_DISPLAY_COUNT` (`10`): Number of entries shown in each leaderboard panel.
+- `LEADERBOARD_DIFFICULTIES` (`easy`, `medium`, `hard`): Ordering used across leaderboard tabs and fetch requests.
+
 ## Game Modes and Difficulty
 
 When starting a new run you can choose between two pacing modes and three difficulty levels:

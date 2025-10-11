@@ -44,13 +44,221 @@ const testingBonusChanceInput = document.getElementById('testing-bonus-chance');
 const testingFruitPointsInput = document.getElementById('testing-fruit-points');
 const testingPowerUpLifetimeInput = document.getElementById('testing-powerup-lifetime');
 
+// -----------------------------------------------------------------------------
+// Game configuration settings
+// -----------------------------------------------------------------------------
+
+/** Base pixel size used before responsive scaling when calculating the board. */
 const BASE_CELL_SIZE = 24;
+
+/** Cached leaderboard storage key within localStorage. */
 const LEADERBOARD_CACHE_KEY = 'snake-leaderboard-cache';
+
+/** LocalStorage key for persisting the player's preferred color theme. */
 const THEME_STORAGE_KEY = 'snake-theme-preference';
+
+/** Minimum milliseconds between snake steps once fully accelerated. */
+const MIN_SPEED_INTERVAL = 55;
+
+/** Maximum milliseconds between snake steps when at the slowest pace. */
+const MAX_SPEED_INTERVAL = 220;
+
+/** Minimum selectable speed level value for manual overrides. */
+const SPEED_LEVEL_MIN = 1;
+
+/** Maximum selectable speed level value for manual overrides. */
+const SPEED_LEVEL_MAX = 10;
+
+/** Amount of acceleration applied to the snake per level up in progressive mode. */
+const SPEED_ACCELERATION = 2.5;
+
+/** Number of guaranteed safe moves after spawning before collisions are checked. */
+const INITIAL_SAFE_PATH_STEPS = 3;
+
+/** Default number of game steps a bonus remains active before timing out. */
+const DEFAULT_BONUS_DURATION_STEPS = 32;
+
+/** Minimum number of steps that must pass between bonus spawns by default. */
+const DEFAULT_BONUS_MIN_GAP_STEPS = 8;
+
+/** Starting cooldown (in fruit collected) before the first bonus appears. */
+const DEFAULT_BONUS_INITIAL_COOLDOWN = 6;
+
+/** Additional score multiplier granted per consecutive bonus pickup. */
+const BONUS_STREAK_INCREMENT = 0.1;
+
+/** Average grid dimension baseline used when scaling bonus durations. */
+const BONUS_DURATION_BASELINE_DIMENSION = 25;
+
+/** Minimum number of steps a scaled bonus is allowed to last. */
+const BONUS_DURATION_MIN_STEPS = 12;
+
+/**
+ * Definitions for each bonus type, including presentation and reward values.
+ */
+const BONUS_TYPES = [
+  {
+    kind: 'points',
+    name: 'Points',
+    score: 30,
+    colors: ['rgba(255, 215, 99, 0.95)', 'rgba(255, 111, 97, 0.95)'],
+    glow: 'rgba(255, 183, 0, 0.65)',
+    outline: 'rgba(255, 245, 224, 0.8)',
+    label: '★',
+    weight: 1.75,
+  },
+  {
+    kind: 'growth',
+    name: 'Growth',
+    growth: 3,
+    colors: ['rgba(110, 245, 255, 0.95)', 'rgba(186, 110, 255, 0.95)'],
+    glow: 'rgba(186, 110, 255, 0.55)',
+    outline: 'rgba(230, 215, 255, 0.75)',
+    label: '⇑',
+    weight: 1,
+  },
+  {
+    kind: 'ultra',
+    name: 'Ultra',
+    scores: { easy: 50, medium: 100, hard: 150 },
+    colors: ['rgba(255, 255, 163, 0.95)', 'rgba(255, 110, 196, 0.95)'],
+    glow: 'rgba(255, 233, 120, 0.6)',
+    outline: 'rgba(255, 248, 210, 0.85)',
+    label: '⚡',
+    weight: 0.2,
+    durationScale: 0.8,
+  },
+];
+
+/** Number of consecutive bonus pickups required before a power-up can spawn. */
+const POWER_UP_TRIGGER_STREAK = 5;
+
+/** Maximum simultaneous power-ups allowed on the board. */
+const POWER_UP_MAX_ACTIVE = 2;
+
+/** Default lifespan of a spawned power-up measured in game steps. */
+const DEFAULT_POWER_UP_LIFETIME_STEPS = 150;
+
+/** Difficulties where power-ups are permitted to appear. */
+const POWER_UP_ALLOWED_DIFFICULTIES = new Set(['medium', 'hard']);
+
+/** Number of steps to flash HUD indicators when a power-up expires. */
+const POWER_UP_DEACTIVATION_FLASH_STEPS = 20;
+
+/** Presentation and gameplay configuration for each power-up type. */
+const POWER_UP_TYPES = {
+  'invincible': {
+    kind: 'invincible',
+    name: 'Invincible',
+    label: '⛨',
+    colors: ['rgba(112, 255, 119, 0.95)', 'rgba(110, 245, 255, 0.95)'],
+    glow: 'rgba(110, 245, 255, 0.45)',
+    outline: 'rgba(210, 255, 224, 0.8)',
+    durationMs: 30000,
+    lifetimeSteps: DEFAULT_POWER_UP_LIFETIME_STEPS,
+  },
+  'tail-cut': {
+    kind: 'tail-cut',
+    name: 'Tail Saver',
+    label: '✂️',
+    colors: ['rgba(255, 215, 99, 0.95)', 'rgba(255, 110, 196, 0.95)'],
+    glow: 'rgba(255, 215, 99, 0.45)',
+    outline: 'rgba(255, 240, 210, 0.85)',
+    charges: 1,
+    lifetimeSteps: DEFAULT_POWER_UP_LIFETIME_STEPS,
+  },
+};
+
+/** Order in which power-ups are cycled when multiple are queued. */
+const POWER_UP_SEQUENCE = ['invincible', 'tail-cut'];
+
+/**
+ * Difficulty tuning knobs that define spawn rates, base points, and pacing for
+ * each selectable challenge level.
+ */
+const DIFFICULTY_CONFIG = {
+  easy: {
+    label: 'Easy',
+    speedLevel: 2,
+    bonusChance: 0.65,
+    bonusMinGapSteps: 4,
+    bonusInitialCooldown: 3,
+    bonusDurationSteps: 40,
+    bonusValueMultiplier: 1.1,
+    obstacleCount: 0,
+    obstacleChangeInterval: Infinity,
+    basePoints: 10,
+  },
+  medium: {
+    label: 'Medium',
+    speedLevel: 5,
+    bonusChance: 0.50,
+    bonusMinGapSteps: 6,
+    bonusInitialCooldown: 5,
+    bonusDurationSteps: 36,
+    bonusValueMultiplier: 1.15,
+    obstacleCount: 4,
+    obstacleChangeInterval: 15,
+    basePoints: 25,
+  },
+  hard: {
+    label: 'Hard',
+    speedLevel: 7,
+    bonusChance: 0.38,
+    bonusMinGapSteps: 6,
+    bonusInitialCooldown: 5,
+    bonusDurationSteps: 30,
+    bonusValueMultiplier: 1.5,
+    obstacleCount: 12,
+    obstacleChangeInterval: 10,
+    basePoints: 30,
+  },
+};
+
+/** Helper copy displayed when players hover each difficulty selection. */
+const DIFFICULTY_DESCRIPTIONS = {
+  easy:
+    'A relaxed pace: fruit is worth 10 points, bonuses drop often, and there are no obstacles in your way.',
+  medium:
+    'Balanced speed: fruit earns 25 points, bonuses arrive steadily, and a few obstacles reshuffle every 15 fruits.',
+  hard:
+    'High intensity: fruit pays 30 points, bonuses hit harder, and dense obstacle fields shift frequently.',
+};
+
+/** Identifiers representing each UI state the shell can enter. */
+const UI_STATES = {
+  INTRO: 'intro',
+  SETTINGS: 'settings',
+  RUNNING: 'running',
+  POSTGAME: 'postgame',
+  LEADERBOARD: 'leaderboard',
+};
+
+/** LocalStorage key for migrating legacy high scores. */
+const LEGACY_HIGH_SCORE_KEY = 'snake-high-score';
+
+/** LocalStorage key used to remember the last entered player name. */
+const PLAYER_NAME_STORAGE_KEY = 'snake-player-name';
+
+/** Maximum total leaderboard entries retained per difficulty. */
+const LEADERBOARD_MAX_ENTRIES = 100;
+
+/** Number of top runs surfaced in leaderboard panels. */
+const LEADERBOARD_TOP_DISPLAY_COUNT = 10;
+
+/** Ordered list of supported leaderboard difficulties. */
+const LEADERBOARD_DIFFICULTIES = ['easy', 'medium', 'hard'];
+
+/** Orientation tokens used when responding to viewport changes. */
+const ORIENTATIONS = { PORTRAIT: 'portrait', LANDSCAPE: 'landscape' };
+
+// -----------------------------------------------------------------------------
+// Derived runtime values
+// -----------------------------------------------------------------------------
+
 let cellSize = BASE_CELL_SIZE;
 let gridColumns = Math.max(12, Math.round(canvas.width / cellSize));
 let gridRows = Math.max(12, Math.round(canvas.height / cellSize));
-const ORIENTATIONS = { PORTRAIT: 'portrait', LANDSCAPE: 'landscape' };
 const deviceInfo = {
   isIOS:
     /iphone|ipad|ipod/i.test(navigator.userAgent) ||
@@ -125,80 +333,6 @@ if (prefersDarkScheme) {
     prefersDarkScheme.addListener(handleSchemeChange);
   }
 }
-const MIN_SPEED_INTERVAL = 55;
-const MAX_SPEED_INTERVAL = 220;
-const SPEED_LEVEL_MIN = 1;
-const SPEED_LEVEL_MAX = 10;
-const SPEED_ACCELERATION = 2.5;
-const INITIAL_SAFE_PATH_STEPS = 3;
-const DEFAULT_BONUS_DURATION_STEPS = 32;
-const DEFAULT_BONUS_MIN_GAP_STEPS = 8;
-const DEFAULT_BONUS_INITIAL_COOLDOWN = 6;
-const BONUS_STREAK_INCREMENT = 0.1;
-const BONUS_DURATION_BASELINE_DIMENSION = 25;
-const BONUS_DURATION_MIN_STEPS = 12;
-const BONUS_TYPES = [
-  {
-    kind: 'points',
-    name: 'Points',
-    score: 30,
-    colors: ['rgba(255, 215, 99, 0.95)', 'rgba(255, 111, 97, 0.95)'],
-    glow: 'rgba(255, 183, 0, 0.65)',
-    outline: 'rgba(255, 245, 224, 0.8)',
-    label: '★',
-    weight: 1.75,
-  },
-  {
-    kind: 'growth',
-    name: 'Growth',
-    growth: 3,
-    colors: ['rgba(110, 245, 255, 0.95)', 'rgba(186, 110, 255, 0.95)'],
-    glow: 'rgba(186, 110, 255, 0.55)',
-    outline: 'rgba(230, 215, 255, 0.75)',
-    label: '⇑',
-    weight: 1,
-  },
-  {
-    kind: 'ultra',
-    name: 'Ultra',
-    scores: { easy: 50, medium: 100, hard: 150 },
-    colors: ['rgba(255, 255, 163, 0.95)', 'rgba(255, 110, 196, 0.95)'],
-    glow: 'rgba(255, 233, 120, 0.6)',
-    outline: 'rgba(255, 248, 210, 0.85)',
-    label: '⚡',
-    weight: 0.2,
-    durationScale: 0.8,
-  },
-];
-
-const POWER_UP_TRIGGER_STREAK = 5;
-const POWER_UP_MAX_ACTIVE = 2;
-const DEFAULT_POWER_UP_LIFETIME_STEPS = 150;
-const POWER_UP_ALLOWED_DIFFICULTIES = new Set(['medium', 'hard']);
-const POWER_UP_DEACTIVATION_FLASH_STEPS = 20;
-const POWER_UP_TYPES = {
-  'invincible': {
-    kind: 'invincible',
-    name: 'Invincible',
-    label: '⛨',
-    colors: ['rgba(112, 255, 119, 0.95)', 'rgba(110, 245, 255, 0.95)'],
-    glow: 'rgba(110, 245, 255, 0.45)',
-    outline: 'rgba(210, 255, 224, 0.8)',
-    durationMs: 30000,
-    lifetimeSteps: DEFAULT_POWER_UP_LIFETIME_STEPS,
-  },
-  'tail-cut': {
-    kind: 'tail-cut',
-    name: 'Tail Saver',
-    label: '✂️',
-    colors: ['rgba(255, 215, 99, 0.95)', 'rgba(255, 110, 196, 0.95)'],
-    glow: 'rgba(255, 215, 99, 0.45)',
-    outline: 'rgba(255, 240, 210, 0.85)',
-    charges: 1,
-    lifetimeSteps: DEFAULT_POWER_UP_LIFETIME_STEPS,
-  },
-};
-const POWER_UP_SEQUENCE = ['invincible', 'tail-cut'];
 
 function getTimestamp() {
   return typeof performance !== 'undefined' && typeof performance.now === 'function'
@@ -450,54 +584,6 @@ function cloneDirectionQueueSnapshot() {
   return directionQueue.map((entry) => cloneDirectionVector(entry));
 }
 
-const DIFFICULTY_CONFIG = {
-  easy: {
-    label: 'Easy',
-    speedLevel: 2,
-    bonusChance: 0.65,
-    bonusMinGapSteps: 4,
-    bonusInitialCooldown: 3,
-    bonusDurationSteps: 40,
-    bonusValueMultiplier: 1.1,
-    obstacleCount: 0,
-    obstacleChangeInterval: Infinity,
-    basePoints: 10,
-  },
-  medium: {
-    label: 'Medium',
-    speedLevel: 5,
-    bonusChance: 0.50,
-    bonusMinGapSteps: 6,
-    bonusInitialCooldown: 5,
-    bonusDurationSteps: 36,
-    bonusValueMultiplier: 1.15,
-    obstacleCount: 4,
-    obstacleChangeInterval: 15,
-    basePoints: 25,
-  },
-  hard: {
-    label: 'Hard',
-    speedLevel: 7,
-    bonusChance: 0.38,
-    bonusMinGapSteps: 6,
-    bonusInitialCooldown: 5,
-    bonusDurationSteps: 30,
-    bonusValueMultiplier: 1.5,
-    obstacleCount: 12,
-    obstacleChangeInterval: 10,
-    basePoints: 30,
-  },
-};
-
-const DIFFICULTY_DESCRIPTIONS = {
-  easy:
-    'A relaxed pace: fruit is worth 10 points, bonuses drop often, and there are no obstacles in your way.',
-  medium:
-    'Balanced speed: fruit earns 25 points, bonuses arrive steadily, and a few obstacles reshuffle every 15 fruits.',
-  hard:
-    'High intensity: fruit pays 30 points, bonuses hit harder, and dense obstacle fields shift frequently.',
-};
-
 const settings = {
   mode: modeSelect ? modeSelect.value : 'progressive',
   difficulty: difficultySelect ? difficultySelect.value : 'easy',
@@ -510,20 +596,6 @@ const settings = {
     powerUpLifetime: null,
   },
 };
-
-const UI_STATES = {
-  INTRO: 'intro',
-  SETTINGS: 'settings',
-  RUNNING: 'running',
-  POSTGAME: 'postgame',
-  LEADERBOARD: 'leaderboard',
-};
-
-const LEGACY_HIGH_SCORE_KEY = 'snake-high-score';
-const PLAYER_NAME_STORAGE_KEY = 'snake-player-name';
-const LEADERBOARD_MAX_ENTRIES = 100;
-const LEADERBOARD_TOP_DISPLAY_COUNT = 10;
-const LEADERBOARD_DIFFICULTIES = ['easy', 'medium', 'hard'];
 
 let uiState = UI_STATES.INTRO;
 let leaderboards = createEmptyLeaderboards();
