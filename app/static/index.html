@@ -12,7 +12,7 @@
     />
     <link rel="stylesheet" href="/static/style.css" />
   </head>
-  <body>
+  <body class="theme-dark">
     <div class="background-layer"></div>
     <main class="app-shell">
       <header class="hud">
@@ -34,6 +34,15 @@
           <div id="power-up-status" class="power-up-status" aria-live="polite"></div>
         </div>
         <div class="hud-actions">
+          <button
+            id="theme-toggle"
+            class="btn"
+            type="button"
+            aria-pressed="false"
+            aria-label="Toggle between light and dark mode"
+          >
+            Light Mode
+          </button>
           <button id="pause-button" class="btn">Pause</button>
         </div>
       </header>
