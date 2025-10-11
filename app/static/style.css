@@ -6,8 +6,77 @@
   --snake-head: #ff6ec4;
   --snake-body: rgba(255, 110, 196, 0.8);
   --grid-line: rgba(255, 255, 255, 0.05);
+  --surface-app: rgba(10, 14, 22, 0.8);
+  --surface-card: rgba(8, 12, 20, 0.75);
+  --surface-panel: rgba(12, 18, 28, 0.75);
+  --surface-chip: rgba(14, 18, 28, 0.85);
+  --surface-chip-boosted: rgba(32, 24, 8, 0.85);
+  --surface-input: rgba(12, 18, 28, 0.75);
+  --surface-testing: rgba(10, 16, 26, 0.6);
+  --surface-overlay: rgba(5, 10, 18, 0.85);
+  --surface-overlay-strong: rgba(5, 10, 18, 0.88);
+  --surface-orientation-card: rgba(10, 14, 22, 0.92);
   --card-bg: rgba(12, 16, 24, 0.85);
+  --board-background: rgba(8, 12, 20, 0.85);
+  --hud-active-bg: rgba(8, 12, 20, 0.75);
+  --border-strong: rgba(110, 245, 255, 0.25);
+  --border-soft: rgba(239, 243, 255, 0.1);
+  --border-card: rgba(239, 243, 255, 0.08);
+  --border-chip: rgba(110, 245, 255, 0.18);
+  --border-input: rgba(110, 245, 255, 0.35);
+  --border-testing: rgba(110, 245, 255, 0.35);
+  --border-button: rgba(110, 245, 255, 0.4);
+  --text-primary: #eff3ff;
+  --text-strong: rgba(239, 243, 255, 0.85);
+  --text-medium: rgba(239, 243, 255, 0.75);
+  --text-muted: rgba(239, 243, 255, 0.7);
+  --text-soft: rgba(239, 243, 255, 0.6);
+  --text-subtle: rgba(239, 243, 255, 0.55);
+  --text-faint: rgba(239, 243, 255, 0.5);
+  --scrollbar-thumb: rgba(110, 245, 255, 0.3);
+  --kbd-bg: rgba(12, 18, 28, 0.85);
+  --kbd-border: rgba(239, 243, 255, 0.18);
+  --kbd-shadow: rgba(239, 243, 255, 0.15);
+  --app-shadow: rgba(0, 0, 0, 0.45);
   font-family: 'Chakra Petch', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+body.theme-light {
+  color-scheme: light;
+  --bg-gradient: radial-gradient(circle at top left, #f5f8ff, #d6e4ff 55%);
+  --grid-line: rgba(0, 0, 0, 0.06);
+  --surface-app: rgba(255, 255, 255, 0.82);
+  --surface-card: rgba(255, 255, 255, 0.9);
+  --surface-panel: rgba(243, 248, 255, 0.9);
+  --surface-chip: rgba(233, 240, 255, 0.85);
+  --surface-chip-boosted: rgba(255, 244, 214, 0.9);
+  --surface-input: rgba(243, 248, 255, 0.95);
+  --surface-testing: rgba(229, 237, 255, 0.8);
+  --surface-overlay: rgba(245, 249, 255, 0.9);
+  --surface-overlay-strong: rgba(245, 249, 255, 0.95);
+  --surface-orientation-card: rgba(255, 255, 255, 0.96);
+  --card-bg: rgba(255, 255, 255, 0.95);
+  --board-background: rgba(235, 242, 255, 0.95);
+  --hud-active-bg: rgba(255, 255, 255, 0.9);
+  --border-strong: rgba(101, 180, 220, 0.35);
+  --border-soft: rgba(24, 32, 52, 0.1);
+  --border-card: rgba(24, 32, 52, 0.12);
+  --border-chip: rgba(88, 146, 220, 0.3);
+  --border-input: rgba(86, 156, 220, 0.45);
+  --border-testing: rgba(86, 156, 220, 0.35);
+  --border-button: rgba(86, 156, 220, 0.45);
+  --text-primary: #0f1f33;
+  --text-strong: rgba(15, 31, 51, 0.92);
+  --text-medium: rgba(22, 38, 63, 0.82);
+  --text-muted: rgba(30, 46, 70, 0.68);
+  --text-soft: rgba(30, 46, 70, 0.6);
+  --text-subtle: rgba(30, 46, 70, 0.52);
+  --text-faint: rgba(30, 46, 70, 0.4);
+  --scrollbar-thumb: rgba(86, 156, 220, 0.5);
+  --kbd-bg: rgba(233, 240, 255, 0.9);
+  --kbd-border: rgba(24, 32, 52, 0.18);
+  --kbd-shadow: rgba(24, 32, 52, 0.12);
+  --app-shadow: rgba(15, 31, 51, 0.15);
 }
 
 * {
@@ -26,7 +95,7 @@ body {
   margin: 0;
   min-height: 100vh;
   background: var(--bg-gradient);
-  color: #eff3ff;
+  color: var(--text-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -41,6 +110,10 @@ body.game-active {
   justify-content: stretch;
 }
 
+body.theme-dark {
+  color-scheme: dark;
+}
+
 .background-layer {
   position: absolute;
   inset: 0;
@@ -50,6 +123,12 @@ body.game-active {
   opacity: 0.8;
   pointer-events: none;
   z-index: 0;
+}
+
+body.theme-light .background-layer {
+  background-image: radial-gradient(circle at center, rgba(110, 180, 255, 0.18), transparent 55%),
+    radial-gradient(circle at bottom, rgba(255, 210, 120, 0.22), transparent 65%);
+  opacity: 0.9;
 }
 
 .app-shell {
@@ -65,11 +144,11 @@ body.game-active {
     'info board';
   gap: 1.5rem;
   align-items: start;
-  background: rgba(10, 14, 22, 0.8);
-  border: 1px solid rgba(110, 245, 255, 0.25);
+  background: var(--surface-app);
+  border: 1px solid var(--border-strong);
   border-radius: 24px;
   backdrop-filter: blur(18px);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 20px 40px var(--app-shadow);
 }
 
 body.game-active .app-shell {
@@ -131,7 +210,7 @@ body.game-active .app-shell {
   border: 1px solid rgba(112, 255, 119, 0.3);
   font-size: 0.85rem;
   font-weight: 600;
-  color: rgba(239, 243, 255, 0.85);
+  color: var(--text-strong);
   box-shadow: inset 0 0 0 1px rgba(112, 255, 119, 0.12);
 }
 
@@ -154,13 +233,13 @@ body.game-active .app-shell {
   font-size: 0.7rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(239, 243, 255, 0.65);
+  color: var(--text-muted);
 }
 
 .power-up-value {
   font-variant-numeric: tabular-nums;
   font-size: 0.85rem;
-  color: rgba(239, 243, 255, 0.85);
+  color: var(--text-strong);
 }
 
 .bonus-indicator-item {
@@ -169,8 +248,8 @@ body.game-active .app-shell {
   gap: 0.35rem;
   padding: 0.35rem 0.6rem;
   border-radius: 999px;
-  background: rgba(14, 18, 28, 0.85);
-  border: 1px solid rgba(110, 245, 255, 0.18);
+  background: var(--surface-chip);
+  border: 1px solid var(--border-chip);
   box-shadow: inset 0 0 0 1px rgba(239, 243, 255, 0.05);
   transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease,
     background 0.2s ease;
@@ -185,7 +264,7 @@ body.game-active .app-shell {
 .bonus-indicator-item.boosted {
   border-color: rgba(255, 215, 99, 0.55);
   box-shadow: 0 0 16px rgba(255, 215, 99, 0.35);
-  background: rgba(32, 24, 8, 0.85);
+  background: var(--surface-chip-boosted);
 }
 
 .bonus-icon {
@@ -206,24 +285,34 @@ body.game-active .app-shell {
 .bonus-multiplier {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: rgba(239, 243, 255, 0.85);
+  color: var(--text-strong);
   text-shadow: 0 0 6px rgba(110, 245, 255, 0.35);
 }
 
 .hud-actions {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .hud-actions .btn {
   min-width: 120px;
 }
 
+#theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
 body.game-active .hud {
-  background: rgba(8, 12, 20, 0.75);
+  background: var(--hud-active-bg);
   border-radius: 18px;
   padding: 0.75rem 1.5rem;
-  border: 1px solid rgba(110, 245, 255, 0.25);
-  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 20px 45px var(--app-shadow);
 }
 
 body.game-active .hud-metrics {
@@ -258,18 +347,18 @@ body.game-active .bonus-indicator {
   align-items: center;
   gap: 0.5rem;
   font-size: 0.95rem;
-  color: rgba(239, 243, 255, 0.82);
+  color: var(--text-strong);
 }
 
 .leaderboard-item.spaced {
   margin-top: 0.75rem;
   padding-top: 0.75rem;
-  border-top: 1px dashed rgba(239, 243, 255, 0.18);
+  border-top: 1px dashed var(--text-faint);
 }
 
 .leaderboard-item .position {
   font-variant-numeric: tabular-nums;
-  color: rgba(239, 243, 255, 0.55);
+  color: var(--text-subtle);
 }
 
 .leaderboard-item .name {
@@ -301,7 +390,7 @@ body.game-active .bonus-indicator {
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.15em;
-  color: rgba(239, 243, 255, 0.7);
+  color: var(--text-muted);
 }
 
 .metric .label .label-detail {
@@ -309,7 +398,7 @@ body.game-active .bonus-indicator {
   font-size: 0.7rem;
   letter-spacing: 0;
   text-transform: none;
-  color: rgba(239, 243, 255, 0.55);
+  color: var(--text-subtle);
   font-weight: 500;
 }
 
@@ -330,21 +419,21 @@ body.game-active .bonus-indicator {
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.15em;
-  color: rgba(239, 243, 255, 0.6);
+  color: var(--text-soft);
 }
 
 .settings-form select,
 .settings-form input,
 .settings-form textarea {
   appearance: none;
-  background: rgba(12, 18, 28, 0.75);
-  border: 1px solid rgba(110, 245, 255, 0.35);
-  color: #eff3ff;
+  background: var(--surface-input);
+  border: 1px solid var(--border-input);
+  color: var(--text-primary);
   border-radius: 999px;
   padding: 0.55rem 1rem;
   font-family: inherit;
   font-size: 0.95rem;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 8px 24px var(--app-shadow);
 }
 
 .settings-form select {
@@ -363,7 +452,7 @@ body.game-active .bonus-indicator {
 
 .settings-description {
   margin: 0.5rem 0 1.5rem;
-  color: rgba(239, 243, 255, 0.75);
+  color: var(--text-medium);
   font-size: 0.9rem;
   line-height: 1.4;
 }
@@ -372,8 +461,8 @@ body.game-active .bonus-indicator {
   margin-top: 1.5rem;
   padding: 1.25rem 1.5rem;
   border-radius: 16px;
-  border: 1px dashed rgba(110, 245, 255, 0.35);
-  background: rgba(10, 16, 26, 0.6);
+  border: 1px dashed var(--border-testing);
+  background: var(--surface-testing);
   display: grid;
   gap: 1rem;
 }
@@ -384,7 +473,7 @@ body.game-active .bonus-indicator {
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: rgba(239, 243, 255, 0.85);
+  color: var(--text-strong);
 }
 
 .testing-controls .field-label {
@@ -393,7 +482,7 @@ body.game-active .bonus-indicator {
 
 .testing-controls .settings-description {
   margin: 0;
-  color: rgba(239, 243, 255, 0.7);
+  color: var(--text-medium);
 }
 
 .menu-panels {
@@ -403,10 +492,10 @@ body.game-active .bonus-indicator {
 }
 
 .menu-card {
-  background: rgba(8, 12, 20, 0.75);
+  background: var(--surface-card);
   border-radius: 20px;
   padding: 1.75rem;
-  border: 1px solid rgba(239, 243, 255, 0.1);
+  border: 1px solid var(--border-soft);
   box-shadow: inset 0 0 0 1px rgba(110, 245, 255, 0.08);
   display: grid;
   gap: 1.25rem;
@@ -436,8 +525,8 @@ body.game-active .bonus-indicator {
   gap: 0.5rem;
   padding: 0.35rem;
   border-radius: 999px;
-  background: rgba(12, 18, 28, 0.75);
-  border: 1px solid rgba(110, 245, 255, 0.2);
+  background: var(--surface-panel);
+  border: 1px solid var(--border-chip);
   box-shadow: inset 0 0 0 1px rgba(239, 243, 255, 0.05);
 }
 
@@ -445,7 +534,7 @@ body.game-active .bonus-indicator {
   appearance: none;
   border: none;
   background: transparent;
-  color: rgba(239, 243, 255, 0.7);
+  color: var(--text-muted);
   font-family: inherit;
   font-size: 0.85rem;
   font-weight: 600;
@@ -457,13 +546,13 @@ body.game-active .bonus-indicator {
 
 .leaderboard-tab:hover,
 .leaderboard-tab:focus-visible {
-  color: rgba(239, 243, 255, 0.95);
+  color: var(--text-strong);
   outline: none;
 }
 
 .leaderboard-tab.active {
   background: rgba(110, 245, 255, 0.15);
-  color: #eff3ff;
+  color: var(--text-primary);
   box-shadow: 0 0 12px rgba(110, 245, 255, 0.25);
 }
 
@@ -472,7 +561,7 @@ body.game-active .bonus-indicator {
   font-size: 0.85rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(239, 243, 255, 0.55);
+  color: var(--text-subtle);
 }
 
 .leaderboard-scroll {
@@ -486,7 +575,7 @@ body.game-active .bonus-indicator {
 }
 
 .leaderboard-scroll::-webkit-scrollbar-thumb {
-  background: rgba(110, 245, 255, 0.3);
+  background: var(--scrollbar-thumb);
   border-radius: 999px;
 }
 
@@ -495,7 +584,7 @@ body.game-active .bonus-indicator {
   font-size: 1.5rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(239, 243, 255, 0.85);
+  color: var(--text-strong);
 }
 
 .settings-form {
@@ -519,9 +608,9 @@ body[data-ui-state='running'] #pause-button {
 
 .btn {
   appearance: none;
-  border: 1px solid rgba(110, 245, 255, 0.4);
-  background: rgba(12, 18, 28, 0.75);
-  color: #eff3ff;
+  border: 1px solid var(--border-button);
+  background: var(--surface-panel);
+  color: var(--text-primary);
   padding: 0.65rem 1.5rem;
   border-radius: 999px;
   font-size: 1rem;
@@ -529,7 +618,7 @@ body[data-ui-state='running'] #pause-button {
   letter-spacing: 0.02em;
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
-  box-shadow: 0 0 0 rgba(110, 245, 255, 0.45);
+  box-shadow: 0 0 0 var(--app-shadow);
 }
 
 .btn.primary {
@@ -561,7 +650,7 @@ body[data-ui-state='running'] #pause-button {
   justify-content: center;
   border-radius: 24px;
   overflow: hidden;
-  border: 1px solid rgba(239, 243, 255, 0.12);
+  border: 1px solid var(--border-soft);
   box-shadow: inset 0 0 0 1px rgba(110, 245, 255, 0.08);
 }
 
@@ -574,7 +663,7 @@ body.game-active .board-wrapper {
   width: 100%;
   height: auto;
   display: block;
-  background: rgba(8, 12, 20, 0.85);
+  background: var(--board-background);
   image-rendering: pixelated;
   touch-action: none;
 }
@@ -588,7 +677,7 @@ body.game-active #game-board {
   inset: 0;
   display: grid;
   place-items: center;
-  background: rgba(5, 10, 18, 0.85);
+  background: var(--surface-overlay);
   backdrop-filter: blur(6px);
   transition: opacity 0.3s ease;
 }
@@ -602,10 +691,10 @@ body.game-active #game-board {
   background: var(--card-bg);
   padding: 2rem 2.5rem;
   border-radius: 20px;
-  border: 1px solid rgba(110, 245, 255, 0.25);
+  border: 1px solid var(--border-strong);
   text-align: center;
   max-width: 320px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 10px 40px var(--app-shadow);
 }
 
 .overlay-actions {
@@ -626,7 +715,7 @@ body.game-active #game-board {
   display: grid;
   place-items: center;
   padding: 1.5rem;
-  background: rgba(5, 10, 18, 0.88);
+  background: var(--surface-overlay-strong);
   backdrop-filter: blur(10px);
   transition: opacity 0.3s ease;
   z-index: 2;
@@ -638,13 +727,13 @@ body.game-active #game-board {
 }
 
 .orientation-guard .card {
-  background: rgba(10, 14, 22, 0.92);
-  border: 1px solid rgba(110, 245, 255, 0.25);
+  background: var(--surface-orientation-card);
+  border: 1px solid var(--border-strong);
   border-radius: 20px;
   padding: 2rem 2.25rem;
   text-align: center;
   max-width: 360px;
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 18px 50px var(--app-shadow);
 }
 
 .orientation-guard h2 {
@@ -654,7 +743,7 @@ body.game-active #game-board {
 
 .orientation-guard p {
   margin: 0;
-  color: rgba(239, 243, 255, 0.82);
+  color: var(--text-medium);
   line-height: 1.5;
 }
 
@@ -666,14 +755,14 @@ body.game-active #game-board {
 
 .overlay p {
   margin-bottom: 1.5rem;
-  color: rgba(239, 243, 255, 0.75);
+  color: var(--text-medium);
 }
 
 .info-panel {
-  background: rgba(8, 12, 20, 0.75);
+  background: var(--surface-card);
   border-radius: 18px;
   padding: 1.5rem;
-  border: 1px solid rgba(239, 243, 255, 0.08);
+  border: 1px solid var(--border-card);
   box-shadow: inset 0 0 0 1px rgba(110, 245, 255, 0.05);
   grid-area: info;
 }
@@ -686,7 +775,7 @@ body.game-active .info-panel {
   margin-top: 0;
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  color: rgba(239, 243, 255, 0.85);
+  color: var(--text-strong);
 }
 
 .info-panel ul {
@@ -694,16 +783,16 @@ body.game-active .info-panel {
   padding-left: 1.2rem;
   display: grid;
   gap: 0.35rem;
-  color: rgba(239, 243, 255, 0.75);
+  color: var(--text-medium);
 }
 
 kbd {
-  background: rgba(12, 18, 28, 0.85);
-  border: 1px solid rgba(239, 243, 255, 0.18);
+  background: var(--kbd-bg);
+  border: 1px solid var(--kbd-border);
   border-radius: 6px;
   padding: 0.15rem 0.35rem;
   font-size: 0.85rem;
-  box-shadow: 0 2px 0 rgba(239, 243, 255, 0.15);
+  box-shadow: 0 2px 0 var(--kbd-shadow);
 }
 
 @media (max-width: 1024px) {
@@ -759,8 +848,9 @@ kbd {
 
   .hud-actions {
     width: 100%;
-    display: flex;
     justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
   }
 
   .scoreboard {

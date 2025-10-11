@@ -6,6 +6,7 @@ const highScoreValue = document.getElementById('high-score-value');
 const highScoreDifficultyLabel = document.getElementById('high-score-difficulty-label');
 const startButton = document.getElementById('start-button');
 const pauseButton = document.getElementById('pause-button');
+const themeToggleButton = document.getElementById('theme-toggle');
 const modeSelect = document.getElementById('mode-select');
 const difficultySelect = document.getElementById('difficulty-select');
 const playerNameInput = document.getElementById('player-name-input');
@@ -45,6 +46,7 @@ const testingPowerUpLifetimeInput = document.getElementById('testing-powerup-lif
 
 const BASE_CELL_SIZE = 24;
 const LEADERBOARD_CACHE_KEY = 'snake-leaderboard-cache';
+const THEME_STORAGE_KEY = 'snake-theme-preference';
 let cellSize = BASE_CELL_SIZE;
 let gridColumns = Math.max(12, Math.round(canvas.width / cellSize));
 let gridRows = Math.max(12, Math.round(canvas.height / cellSize));
@@ -56,6 +58,73 @@ const deviceInfo = {
 };
 deviceInfo.isIPhone = /iphone/i.test(navigator.userAgent);
 deviceInfo.isIPad = deviceInfo.isIOS && !deviceInfo.isIPhone;
+const prefersDarkScheme =
+  typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? window.matchMedia('(prefers-color-scheme: dark)')
+    : null;
+
+function readStoredTheme() {
+  try {
+    const storedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+    return storedTheme === 'light' || storedTheme === 'dark' ? storedTheme : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function persistTheme(theme) {
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+  } catch (error) {
+    // ignore storage errors (private browsing, etc.)
+  }
+}
+
+function applyThemePreference(theme) {
+  const normalizedTheme = theme === 'light' ? 'light' : 'dark';
+  document.body.classList.toggle('theme-light', normalizedTheme === 'light');
+  document.body.classList.toggle('theme-dark', normalizedTheme === 'dark');
+  document.body.dataset.theme = normalizedTheme;
+
+  if (themeToggleButton) {
+    const isLight = normalizedTheme === 'light';
+    const label = isLight ? 'Dark Mode' : 'Light Mode';
+    const icon = isLight ? '🌙' : '☀️';
+    themeToggleButton.textContent = `${icon} ${label}`;
+    themeToggleButton.setAttribute('aria-pressed', String(isLight));
+    themeToggleButton.setAttribute('aria-label', `Activate ${isLight ? 'dark' : 'light'} mode`);
+  }
+
+  return normalizedTheme;
+}
+
+let storedThemePreference = readStoredTheme();
+let currentTheme = applyThemePreference(
+  storedThemePreference ?? (prefersDarkScheme && prefersDarkScheme.matches ? 'dark' : 'light')
+);
+
+if (themeToggleButton) {
+  themeToggleButton.addEventListener('click', () => {
+    currentTheme = applyThemePreference(currentTheme === 'light' ? 'dark' : 'light');
+    persistTheme(currentTheme);
+    storedThemePreference = currentTheme;
+  });
+}
+
+if (prefersDarkScheme) {
+  const handleSchemeChange = (event) => {
+    if (storedThemePreference) {
+      return;
+    }
+    currentTheme = applyThemePreference(event.matches ? 'dark' : 'light');
+  };
+
+  if (typeof prefersDarkScheme.addEventListener === 'function') {
+    prefersDarkScheme.addEventListener('change', handleSchemeChange);
+  } else if (typeof prefersDarkScheme.addListener === 'function') {
+    prefersDarkScheme.addListener(handleSchemeChange);
+  }
+}
 const MIN_SPEED_INTERVAL = 55;
 const MAX_SPEED_INTERVAL = 220;
 const SPEED_LEVEL_MIN = 1;
