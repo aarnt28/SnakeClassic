@@ -87,6 +87,8 @@
               <select id="mode-select">
                 <option value="constant">Constant</option>
                 <option value="progressive" selected>Progressive</option>
+                <option value="practice">Practice</option>
+                <option value="testing">Testing</option>
               </select>
             </label>
             <label class="field">
@@ -98,6 +100,73 @@
               </select>
             </label>
             <p id="difficulty-description" class="settings-description"></p>
+            <div id="testing-controls" class="testing-controls hidden" aria-live="polite">
+              <h3 class="testing-title">Testing Overrides</h3>
+              <p class="settings-description">
+                Adjust these values to experiment with different behaviours before starting the
+                round.
+              </p>
+              <label class="field">
+                <span class="field-label">Speed Interval (ms)</span>
+                <input
+                  id="testing-speed-interval"
+                  type="number"
+                  min="55"
+                  max="600"
+                  step="5"
+                  inputmode="numeric"
+                  placeholder="Auto"
+                />
+              </label>
+              <label class="field">
+                <span class="field-label">Obstacle Count</span>
+                <input
+                  id="testing-obstacle-count"
+                  type="number"
+                  min="0"
+                  max="200"
+                  step="1"
+                  inputmode="numeric"
+                  placeholder="Difficulty default"
+                />
+              </label>
+              <label class="field">
+                <span class="field-label">Bonus Spawn Chance (%)</span>
+                <input
+                  id="testing-bonus-chance"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="1"
+                  inputmode="numeric"
+                  placeholder="Difficulty default"
+                />
+              </label>
+              <label class="field">
+                <span class="field-label">Fruit Value</span>
+                <input
+                  id="testing-fruit-points"
+                  type="number"
+                  min="1"
+                  max="1000"
+                  step="1"
+                  inputmode="numeric"
+                  placeholder="Difficulty default"
+                />
+              </label>
+              <label class="field">
+                <span class="field-label">Power-Up Lifetime (steps)</span>
+                <input
+                  id="testing-powerup-lifetime"
+                  type="number"
+                  min="10"
+                  max="600"
+                  step="1"
+                  inputmode="numeric"
+                  placeholder="Default"
+                />
+              </label>
+            </div>
             <div class="controls">
               <button type="button" id="settings-back-button" class="btn">Back</button>
               <button type="submit" class="btn primary">Begin Run</button>
@@ -120,7 +189,10 @@
             <p id="overlay-message">
               Use the arrow keys, WASD, or swipe on mobile to guide the snake.
             </p>
-            <button id="overlay-button" class="btn primary">Continue</button>
+            <div class="overlay-actions">
+              <button id="overlay-button" class="btn primary">Continue</button>
+              <button id="overlay-secondary-button" class="btn hidden">Secondary</button>
+            </div>
           </div>
         </div>
         <div id="orientation-guard" class="orientation-guard hidden" role="alert" aria-live="assertive">
