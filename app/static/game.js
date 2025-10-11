@@ -13,6 +13,7 @@ const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlayMessage = document.getElementById('overlay-message');
 const overlayButton = document.getElementById('overlay-button');
+const overlaySecondaryButton = document.getElementById('overlay-secondary-button');
 const orientationGuard = document.getElementById('orientation-guard');
 const orientationGuardTitle = document.getElementById('orientation-guard-title');
 const orientationGuardMessage = document.getElementById('orientation-guard-message');
@@ -35,6 +36,12 @@ const introLeaderboardDifficultyLabel = document.getElementById('intro-leaderboa
 const panelLeaderboardDifficultyLabel = document.getElementById('leaderboard-panel-difficulty');
 const postgameLeaderboardDifficultyLabel = document.getElementById('postgame-leaderboard-difficulty');
 const leaderboardTabGroups = document.querySelectorAll('.leaderboard-tabs');
+const testingControls = document.getElementById('testing-controls');
+const testingSpeedInput = document.getElementById('testing-speed-interval');
+const testingObstacleInput = document.getElementById('testing-obstacle-count');
+const testingBonusChanceInput = document.getElementById('testing-bonus-chance');
+const testingFruitPointsInput = document.getElementById('testing-fruit-points');
+const testingPowerUpLifetimeInput = document.getElementById('testing-powerup-lifetime');
 
 const BASE_CELL_SIZE = 24;
 const LEADERBOARD_CACHE_KEY = 'snake-leaderboard-cache';
@@ -54,6 +61,7 @@ const MAX_SPEED_INTERVAL = 220;
 const SPEED_LEVEL_MIN = 1;
 const SPEED_LEVEL_MAX = 10;
 const SPEED_ACCELERATION = 2.5;
+const INITIAL_SAFE_PATH_STEPS = 3;
 const DEFAULT_BONUS_DURATION_STEPS = 32;
 const DEFAULT_BONUS_MIN_GAP_STEPS = 8;
 const DEFAULT_BONUS_INITIAL_COOLDOWN = 6;
@@ -98,6 +106,7 @@ const POWER_UP_TRIGGER_STREAK = 5;
 const POWER_UP_MAX_ACTIVE = 2;
 const DEFAULT_POWER_UP_LIFETIME_STEPS = 150;
 const POWER_UP_ALLOWED_DIFFICULTIES = new Set(['medium', 'hard']);
+const POWER_UP_DEACTIVATION_FLASH_STEPS = 20;
 const POWER_UP_TYPES = {
   'invincible': {
     kind: 'invincible',
@@ -145,6 +154,57 @@ function createInitialPowerUpEffects() {
   };
 }
 
+function createInitialPowerUpVisuals() {
+  return {
+    invincibleActive: false,
+    invincibleFlashTimer: 0,
+    tailShieldActive: false,
+    tailShieldFlashTimer: 0,
+  };
+}
+
+function ensurePowerUpVisuals(currentState = state) {
+  if (!currentState.powerUpVisuals) {
+    currentState.powerUpVisuals = createInitialPowerUpVisuals();
+  }
+  return currentState.powerUpVisuals;
+}
+
+function markPowerUpActivation(kind, currentState = state) {
+  const visuals = ensurePowerUpVisuals(currentState);
+  if (kind === 'invincible') {
+    visuals.invincibleActive = true;
+    visuals.invincibleFlashTimer = 0;
+  }
+  if (kind === 'tail-cut') {
+    visuals.tailShieldActive = true;
+    visuals.tailShieldFlashTimer = 0;
+  }
+}
+
+function markPowerUpDeactivation(kind, currentState = state) {
+  const visuals = ensurePowerUpVisuals(currentState);
+  if (kind === 'invincible') {
+    visuals.invincibleActive = false;
+    visuals.invincibleFlashTimer = POWER_UP_DEACTIVATION_FLASH_STEPS;
+  }
+  if (kind === 'tail-cut') {
+    visuals.tailShieldActive = false;
+    visuals.tailShieldFlashTimer = POWER_UP_DEACTIVATION_FLASH_STEPS;
+  }
+}
+
+function tickPowerUpVisuals(currentState = state) {
+  const visuals = ensurePowerUpVisuals(currentState);
+  if (visuals.invincibleFlashTimer > 0) {
+    visuals.invincibleFlashTimer -= 1;
+  }
+  if (visuals.tailShieldFlashTimer > 0) {
+    visuals.tailShieldFlashTimer -= 1;
+  }
+  return visuals;
+}
+
 function ensurePowerUpEffects(currentState = state) {
   if (!currentState.powerUpEffects) {
     currentState.powerUpEffects = createInitialPowerUpEffects();
@@ -159,6 +219,7 @@ function ensurePowerUpEffects(currentState = state) {
   if (!currentState.powerUpEffects['tail-cut']) {
     currentState.powerUpEffects['tail-cut'] = { charges: 0 };
   }
+  ensurePowerUpVisuals(currentState);
   return currentState.powerUpEffects;
 }
 
@@ -168,6 +229,7 @@ function refreshPowerUpEffects(currentState = state) {
     if (getTimestamp() >= effects['invincible'].expiresAt) {
       effects['invincible'].active = false;
       effects['invincible'].expiresAt = 0;
+      markPowerUpDeactivation('invincible', currentState);
     }
   }
   return effects;
@@ -181,6 +243,7 @@ function activateInvincibility(durationMs, currentState = state) {
   effects['invincible'].active = true;
   effects['invincible'].expiresAt = now + duration;
   effects['invincible'].durationMs = duration;
+  markPowerUpActivation('invincible', currentState);
 }
 
 function isInvincibilityActive(currentState = state) {
@@ -192,6 +255,11 @@ function addTailShieldCharges(count, currentState = state) {
   const effects = ensurePowerUpEffects(currentState);
   const next = Math.max(0, (effects['tail-cut'].charges || 0) + count);
   effects['tail-cut'].charges = next;
+  if (next > 0) {
+    markPowerUpActivation('tail-cut', currentState);
+  } else {
+    markPowerUpDeactivation('tail-cut', currentState);
+  }
   return next;
 }
 
@@ -199,6 +267,9 @@ function consumeTailShield(currentState = state) {
   const effects = ensurePowerUpEffects(currentState);
   if ((effects['tail-cut'].charges || 0) > 0) {
     effects['tail-cut'].charges -= 1;
+    if (effects['tail-cut'].charges <= 0) {
+      markPowerUpDeactivation('tail-cut', currentState);
+    }
     return true;
   }
   return false;
@@ -285,6 +356,31 @@ const directions = {
   KeyD: { x: 1, y: 0 },
 };
 
+function cloneDirectionVector(vector) {
+  if (!vector) {
+    return { x: 0, y: 0 };
+  }
+  return { x: vector.x ?? 0, y: vector.y ?? 0 };
+}
+
+function clearDirectionQueue() {
+  directionQueue.length = 0;
+}
+
+function restoreDirectionQueue(queueSnapshot) {
+  clearDirectionQueue();
+  if (!Array.isArray(queueSnapshot)) {
+    return;
+  }
+  queueSnapshot.forEach((entry) => {
+    directionQueue.push(cloneDirectionVector(entry));
+  });
+}
+
+function cloneDirectionQueueSnapshot() {
+  return directionQueue.map((entry) => cloneDirectionVector(entry));
+}
+
 const DIFFICULTY_CONFIG = {
   easy: {
     label: 'Easy',
@@ -337,6 +433,13 @@ const settings = {
   mode: modeSelect ? modeSelect.value : 'progressive',
   difficulty: difficultySelect ? difficultySelect.value : 'easy',
   playerName: '',
+  testingOverrides: {
+    speedInterval: null,
+    obstacleCount: null,
+    bonusChance: null,
+    fruitPoints: null,
+    powerUpLifetime: null,
+  },
 };
 
 const UI_STATES = {
@@ -367,6 +470,8 @@ let lastFrameTime = 0;
 let accumulatedTime = 0;
 let paused = false;
 let touchStart = null;
+const directionQueue = [];
+let practiceCheckpoint = null;
 
 settings.playerName = loadStoredPlayerName();
 if (playerNameInput) {
@@ -379,6 +484,7 @@ if (modeSelect) {
   settings.mode = modeSelect.value;
 }
 updateDifficultyDescription();
+updateTestingControlsVisibility();
 buildBonusIndicator();
 updateBonusIndicator();
 
@@ -403,6 +509,7 @@ function setUIState(next) {
 
   if (next === UI_STATES.SETTINGS) {
     updateDifficultyDescription();
+    updateTestingControlsVisibility();
     if (playerNameInput) {
       playerNameInput.focus();
     }
@@ -475,6 +582,54 @@ function updateDifficultyDescription() {
   difficultyDescription.textContent = DIFFICULTY_DESCRIPTIONS[settings.difficulty] || '';
   if (difficultyDescription.dataset.speedInterval !== String(config.speedLevel)) {
     difficultyDescription.dataset.speedInterval = String(config.speedLevel);
+  }
+}
+
+function updateTestingControlsVisibility() {
+  if (!testingControls) {
+    return;
+  }
+  const isTesting = settings.mode === 'testing';
+  testingControls.classList.toggle('hidden', !isTesting);
+  if (isTesting) {
+    syncTestingInputsFromSettings();
+  }
+}
+
+function syncTestingInputsFromSettings() {
+  if (!settings.testingOverrides) {
+    return;
+  }
+  const overrides = settings.testingOverrides;
+  if (testingSpeedInput) {
+    testingSpeedInput.value =
+      Number.isFinite(overrides.speedInterval) && overrides.speedInterval !== null
+        ? String(overrides.speedInterval)
+        : '';
+  }
+  if (testingObstacleInput) {
+    testingObstacleInput.value =
+      Number.isFinite(overrides.obstacleCount) && overrides.obstacleCount !== null
+        ? String(overrides.obstacleCount)
+        : '';
+  }
+  if (testingBonusChanceInput) {
+    testingBonusChanceInput.value =
+      Number.isFinite(overrides.bonusChance) && overrides.bonusChance !== null
+        ? String(Number((overrides.bonusChance * 100).toFixed(1)))
+        : '';
+  }
+  if (testingFruitPointsInput) {
+    testingFruitPointsInput.value =
+      Number.isFinite(overrides.fruitPoints) && overrides.fruitPoints !== null
+        ? String(overrides.fruitPoints)
+        : '';
+  }
+  if (testingPowerUpLifetimeInput) {
+    testingPowerUpLifetimeInput.value =
+      Number.isFinite(overrides.powerUpLifetime) && overrides.powerUpLifetime !== null
+        ? String(overrides.powerUpLifetime)
+        : '';
   }
 }
 
@@ -728,9 +883,18 @@ function handleOrientationChange() {
 function applySettingsToState() {
   const config = getDifficultyConfig(settings.difficulty);
   const interval = levelToInterval(config.speedLevel);
+  const overrides = settings.mode === 'testing' ? settings.testingOverrides || {} : {};
+  const overrideSpeed =
+    Number.isFinite(overrides.speedInterval)
+      ? Math.max(MIN_SPEED_INTERVAL, Math.min(600, Math.round(overrides.speedInterval)))
+      : null;
   state.mode = settings.mode;
   state.difficulty = settings.difficulty;
-  state.bonusChance = config.bonusChance;
+  const overrideBonusChance =
+    Number.isFinite(overrides.bonusChance) && overrides.bonusChance >= 0
+      ? Math.max(0, Math.min(1, overrides.bonusChance))
+      : null;
+  state.bonusChance = overrideBonusChance ?? config.bonusChance;
   state.bonusMinGapSteps = config.bonusMinGapSteps ?? DEFAULT_BONUS_MIN_GAP_STEPS;
   const previousScaledDuration = state.bonusDurationSteps;
   state.baseBonusDurationSteps = config.bonusDurationSteps ?? DEFAULT_BONUS_DURATION_STEPS;
@@ -742,17 +906,40 @@ function applySettingsToState() {
   if (state.bonus && Number.isFinite(previousScaledDuration)) {
     adjustActiveBonusDuration(previousScaledDuration, state.bonusDurationSteps);
   }
-  state.obstacleBaseCount = config.obstacleCount ?? 0;
-  state.obstacleCount = config.obstacleCount ?? 0;
+  const overrideObstacleCount =
+    Number.isFinite(overrides.obstacleCount) && overrides.obstacleCount >= 0
+      ? Math.max(0, Math.floor(overrides.obstacleCount))
+      : null;
+  state.obstacleBaseCount = overrideObstacleCount ?? (config.obstacleCount ?? 0);
+  state.obstacleCount = Math.min(
+    state.obstacleBaseCount,
+    Array.isArray(state.obstacles) ? state.obstacles.length : state.obstacleBaseCount,
+  );
   state.obstacleChangeInterval = config.obstacleChangeInterval ?? Infinity;
-  state.foodPoints = config.basePoints;
+  const overrideFruitPoints =
+    Number.isFinite(overrides.fruitPoints) && overrides.fruitPoints >= 0
+      ? Math.max(0, Math.floor(overrides.fruitPoints))
+      : null;
+  state.foodPoints = overrideFruitPoints ?? config.basePoints;
   if (!Array.isArray(state.powerUps)) {
     state.powerUps = [];
   }
-  state.powerUpLifetimeSteps = state.powerUpLifetimeSteps ?? DEFAULT_POWER_UP_LIFETIME_STEPS;
+  const overridePowerUpLifetime =
+    Number.isFinite(overrides.powerUpLifetime) && overrides.powerUpLifetime > 0
+      ? Math.round(overrides.powerUpLifetime)
+      : null;
+  if (overridePowerUpLifetime) {
+    state.powerUpLifetimeSteps = overridePowerUpLifetime;
+  } else {
+    state.powerUpLifetimeSteps = state.powerUpLifetimeSteps ?? DEFAULT_POWER_UP_LIFETIME_STEPS;
+  }
   const effects = ensurePowerUpEffects(state);
   effects['invincible'].durationMs = getPowerUpType('invincible').durationMs ?? effects['invincible'].durationMs;
-  if (!state.running || state.mode === 'constant') {
+  ensurePowerUpVisuals(state);
+  if (overrideSpeed !== null) {
+    state.baseSpeed = overrideSpeed;
+    state.speed = overrideSpeed;
+  } else if (!state.running || state.mode === 'constant') {
     state.baseSpeed = interval;
     state.speed = interval;
   }
@@ -760,38 +947,61 @@ function applySettingsToState() {
 
 function createInitialState() {
   const config = getDifficultyConfig(settings.difficulty);
+  const overrides = settings.mode === 'testing' ? settings.testingOverrides || {} : {};
   const centerX = Math.floor(gridColumns / 2);
   const centerY = Math.floor(gridRows / 2);
-  const baseSpeed = levelToInterval(config.speedLevel);
+  const overrideSpeed =
+    Number.isFinite(overrides.speedInterval)
+      ? Math.max(MIN_SPEED_INTERVAL, Math.min(600, Math.round(overrides.speedInterval)))
+      : null;
+  const baseSpeed = overrideSpeed ?? levelToInterval(config.speedLevel);
   const baseBonusDuration = config.bonusDurationSteps ?? DEFAULT_BONUS_DURATION_STEPS;
   const scaledBonusDuration = scaleBonusDuration(baseBonusDuration);
+  const initialDirection = { x: 1, y: 0 };
   const snake = [
     { x: (centerX + 1) % gridColumns, y: centerY % gridRows },
     { x: centerX % gridColumns, y: centerY % gridRows },
     { x: (centerX - 1 + gridColumns) % gridColumns, y: centerY % gridRows },
   ];
   const food = spawnFood(snake);
+  const safePath = computeInitialSafePath(snake[0], initialDirection, INITIAL_SAFE_PATH_STEPS);
+  const obstacleTarget = Number.isFinite(overrides.obstacleCount)
+    ? Math.max(0, Math.floor(overrides.obstacleCount))
+    : config.obstacleCount ?? 0;
   const obstacles =
-    config.obstacleCount > 0
-      ? generateObstacles(config.obstacleCount, [...snake, food])
+    obstacleTarget > 0
+      ? generateObstacles(obstacleTarget, [...snake, food, ...safePath])
       : [];
+  const bonusChanceOverride =
+    Number.isFinite(overrides.bonusChance) && overrides.bonusChance >= 0
+      ? Math.max(0, Math.min(1, overrides.bonusChance))
+      : null;
+  const fruitPointsOverride =
+    Number.isFinite(overrides.fruitPoints) && overrides.fruitPoints >= 0
+      ? Math.max(0, Math.floor(overrides.fruitPoints))
+      : null;
+  const powerUpLifetimeOverride =
+    Number.isFinite(overrides.powerUpLifetime) && overrides.powerUpLifetime > 0
+      ? Math.round(overrides.powerUpLifetime)
+      : null;
 
   return {
     snake,
-    direction: { x: 1, y: 0 },
-    nextDirection: { x: 1, y: 0 },
+    direction: { ...initialDirection },
+    nextDirection: { ...initialDirection },
     food,
     bonus: null,
     bonusTimer: config.bonusInitialCooldown ?? DEFAULT_BONUS_INITIAL_COOLDOWN,
     baseBonusDurationSteps: baseBonusDuration,
     bonusDurationSteps: scaledBonusDuration,
-    bonusChance: config.bonusChance,
+    bonusChance: bonusChanceOverride ?? config.bonusChance,
     bonusMinGapSteps: config.bonusMinGapSteps ?? DEFAULT_BONUS_MIN_GAP_STEPS,
     bonusValueMultiplier: config.bonusValueMultiplier ?? 1,
     bonusStreaks: createBonusStreaks(),
     powerUps: [],
-    powerUpLifetimeSteps: DEFAULT_POWER_UP_LIFETIME_STEPS,
+    powerUpLifetimeSteps: powerUpLifetimeOverride ?? DEFAULT_POWER_UP_LIFETIME_STEPS,
     powerUpEffects: createInitialPowerUpEffects(),
+    powerUpVisuals: createInitialPowerUpVisuals(),
     consecutiveBonusPickups: 0,
     nextPowerUpIndex: 0,
     pendingGrowth: 0,
@@ -801,11 +1011,11 @@ function createInitialState() {
     mode: settings.mode,
     running: false,
     difficulty: settings.difficulty,
-    foodPoints: config.basePoints,
+    foodPoints: fruitPointsOverride ?? config.basePoints,
     foodEaten: 0,
     obstacles,
-    obstacleCount: config.obstacleCount ?? 0,
-    obstacleBaseCount: config.obstacleCount ?? 0,
+    obstacleCount: obstacles.length,
+    obstacleBaseCount: obstacleTarget,
     obstacleChangeInterval: config.obstacleChangeInterval ?? Infinity,
   };
 }
@@ -834,6 +1044,21 @@ function findAvailableCell(occupied) {
   return available[Math.floor(Math.random() * available.length)];
 }
 
+function computeInitialSafePath(head, direction, steps = INITIAL_SAFE_PATH_STEPS) {
+  if (!head || !direction) {
+    return [];
+  }
+  const safe = [];
+  let currentX = head.x;
+  let currentY = head.y;
+  for (let index = 0; index < steps; index += 1) {
+    currentX = (currentX + direction.x + gridColumns) % gridColumns;
+    currentY = (currentY + direction.y + gridRows) % gridRows;
+    safe.push({ x: currentX, y: currentY });
+  }
+  return safe;
+}
+
 function generateObstacles(count, blocked = []) {
   const obstacles = [];
   for (let i = 0; i < count; i += 1) {
@@ -844,6 +1069,197 @@ function generateObstacles(count, blocked = []) {
     obstacles.push(obstacle);
   }
   return obstacles;
+}
+
+function clonePosition(position) {
+  return position ? { x: position.x, y: position.y } : null;
+}
+
+function cloneSnakeSegments(segments) {
+  if (!Array.isArray(segments)) {
+    return [];
+  }
+  return segments.map((segment) => clonePosition(segment) || { x: 0, y: 0 });
+}
+
+function cloneBonus(bonus) {
+  if (!bonus) {
+    return null;
+  }
+  return {
+    position: clonePosition(bonus.position),
+    type: bonus.type,
+    remainingSteps: bonus.remainingSteps,
+  };
+}
+
+function cloneBonusStreaks(streaks) {
+  const clone = {};
+  if (!streaks) {
+    return clone;
+  }
+  Object.keys(streaks).forEach((key) => {
+    clone[key] = streaks[key];
+  });
+  return clone;
+}
+
+function clonePowerUps(powerUps) {
+  if (!Array.isArray(powerUps)) {
+    return [];
+  }
+  return powerUps.map((powerUp) => ({
+    kind: powerUp.kind,
+    position: clonePosition(powerUp.position),
+    remainingSteps: powerUp.remainingSteps,
+  }));
+}
+
+function cloneObstaclesList(obstacles) {
+  if (!Array.isArray(obstacles)) {
+    return [];
+  }
+  return obstacles.map((obstacle) => clonePosition(obstacle) || { x: 0, y: 0 });
+}
+
+function clonePowerUpEffectsSnapshot(effects) {
+  const ensured = ensurePowerUpEffects({ powerUpEffects: effects, powerUpVisuals: null });
+  return {
+    'invincible': {
+      active: ensured['invincible'].active,
+      expiresAt: ensured['invincible'].expiresAt,
+      durationMs: ensured['invincible'].durationMs,
+    },
+    'tail-cut': {
+      charges: ensured['tail-cut'].charges || 0,
+    },
+  };
+}
+
+function clonePowerUpVisualsSnapshot(visuals) {
+  const ensured = visuals ? { ...visuals } : createInitialPowerUpVisuals();
+  return {
+    invincibleActive: ensured.invincibleActive || false,
+    invincibleFlashTimer: ensured.invincibleFlashTimer || 0,
+    tailShieldActive: ensured.tailShieldActive || false,
+    tailShieldFlashTimer: ensured.tailShieldFlashTimer || 0,
+  };
+}
+
+function cloneGameState(sourceState) {
+  if (!sourceState) {
+    return null;
+  }
+  const snapshot = { ...sourceState };
+  snapshot.snake = cloneSnakeSegments(sourceState.snake);
+  snapshot.direction = cloneDirectionVector(sourceState.direction);
+  snapshot.nextDirection = cloneDirectionVector(sourceState.nextDirection);
+  snapshot.food = clonePosition(sourceState.food) || { x: 0, y: 0 };
+  snapshot.bonus = cloneBonus(sourceState.bonus);
+  snapshot.bonusStreaks = cloneBonusStreaks(sourceState.bonusStreaks);
+  snapshot.powerUps = clonePowerUps(sourceState.powerUps);
+  snapshot.powerUpEffects = clonePowerUpEffectsSnapshot(sourceState.powerUpEffects);
+  snapshot.powerUpVisuals = clonePowerUpVisualsSnapshot(sourceState.powerUpVisuals);
+  snapshot.obstacles = cloneObstaclesList(sourceState.obstacles);
+  snapshot.running = false;
+  return snapshot;
+}
+
+function createPracticeCheckpoint(currentState = state) {
+  if (!currentState || currentState.mode !== 'practice') {
+    return null;
+  }
+  ensurePowerUpEffects(currentState);
+  ensurePowerUpVisuals(currentState);
+  return {
+    state: cloneGameState(currentState),
+    accumulatedTime,
+    directionQueue: cloneDirectionQueueSnapshot(),
+  };
+}
+
+function restorePracticeCheckpoint(checkpoint) {
+  if (!checkpoint || !checkpoint.state) {
+    return false;
+  }
+  const restored = cloneGameState(checkpoint.state);
+  if (!restored) {
+    return false;
+  }
+  state = restored;
+  accumulatedTime = checkpoint.accumulatedTime ?? 0;
+  restoreDirectionQueue(checkpoint.directionQueue);
+  ensurePowerUpEffects(state);
+  ensurePowerUpVisuals(state);
+  updateScoreboard();
+  draw();
+  return true;
+}
+
+function buildPracticeCollisionMessage(cause) {
+  switch (cause) {
+    case 'obstacle':
+      return 'You clipped an obstacle.';
+    case 'self':
+      return 'You ran into your own tail.';
+    default:
+      return 'The run would normally end here.';
+  }
+}
+
+function handlePracticeCollision(cause = 'collision') {
+  if (!state || state.mode !== 'practice') {
+    endGame();
+    return;
+  }
+  cancelAnimationFrame(animationFrameId);
+  state.running = false;
+  paused = true;
+  if (!practiceCheckpoint) {
+    practiceCheckpoint = createPracticeCheckpoint(state);
+  }
+  if (!restorePracticeCheckpoint(practiceCheckpoint)) {
+    practiceCheckpoint = null;
+    resetGame({ showIntroOverlay: false });
+    const fallbackMessage =
+      'Practice mode could not restore the previous state. The run has been reset.';
+    showOverlay('Practice Mode', fallbackMessage, 'Begin Again', {
+      buttonAction: 'start-run',
+      hideSecondaryButton: true,
+    });
+    return;
+  }
+
+  const description = buildPracticeCollisionMessage(cause);
+  const message =
+    `${description} Practice mode lets you resume from right before the mistake or reset the run to try again from scratch.`;
+  showOverlay('Practice Mode', message, 'Resume', {
+    buttonAction: 'resume-practice',
+    secondaryLabel: 'Reset Run',
+    secondaryAction: 'reset-practice',
+    hideSecondaryButton: false,
+  });
+}
+
+function resumePracticeRun() {
+  if (!state || state.mode !== 'practice') {
+    hideOverlay();
+    return;
+  }
+  hideOverlay();
+  paused = false;
+  state.running = true;
+  practiceCheckpoint = null;
+  lastFrameTime = performance.now();
+  animationFrameId = requestAnimationFrame(gameLoop);
+}
+
+function resetPracticeRun() {
+  practiceCheckpoint = null;
+  hideOverlay();
+  resetGame({ showIntroOverlay: false });
+  setUIState(UI_STATES.RUNNING);
+  showPreRunOverlay();
 }
 
 function maybeShuffleObstacles() {
@@ -993,6 +1409,8 @@ function resetGame({ showIntroOverlay = false } = {}) {
   refreshBoardGeometry({ allowDuringGame: true });
   state = createInitialState();
   applySettingsToState();
+  practiceCheckpoint = null;
+  clearDirectionQueue();
   paused = false;
   accumulatedTime = 0;
   cancelAnimationFrame(animationFrameId);
@@ -1006,7 +1424,7 @@ function resetGame({ showIntroOverlay = false } = {}) {
       { buttonAction: 'dismiss' },
     );
   } else {
-    overlay.classList.add('hidden');
+    hideOverlay();
   }
 }
 
@@ -1718,7 +2136,7 @@ function startGame() {
   orientationPauseActive = false;
   state.running = true;
   paused = false;
-  overlay.classList.add('hidden');
+  hideOverlay();
   lastFrameTime = performance.now();
   accumulatedTime = 0;
   cancelAnimationFrame(animationFrameId);
@@ -1736,13 +2154,17 @@ function pauseGame() {
     });
     cancelAnimationFrame(animationFrameId);
   } else {
-    overlay.classList.add('hidden');
+    hideOverlay();
     lastFrameTime = performance.now();
     animationFrameId = requestAnimationFrame(gameLoop);
   }
 }
 
 function endGame() {
+  if (state.mode === 'practice') {
+    handlePracticeCollision('collision');
+    return;
+  }
   state.running = false;
   cancelAnimationFrame(animationFrameId);
   updateScoreboard();
@@ -1752,36 +2174,40 @@ function endGame() {
   let currentEntry = null;
   let rank = null;
   let candidate = null;
+  const recordScore = state.mode !== 'testing';
+  const displayDifficulty = ensureDifficulty(state.difficulty);
+  const baselineEntries = getLeaderboardEntriesForDifficulty(displayDifficulty);
+  let topEntries = baselineEntries.slice(0, 3);
 
-  if (state.score > 0) {
+  if (recordScore && state.score > 0) {
     candidate = {
       name: sanitizeName(settings.playerName) || 'Anonymous',
       score: state.score,
       difficulty: state.difficulty,
     };
-    const difficultyKey = ensureDifficulty(state.difficulty);
-    const difficultyEntries = getLeaderboardEntriesForDifficulty(difficultyKey);
+    const difficultyEntries = getLeaderboardEntriesForDifficulty(displayDifficulty);
     placement = evaluateLeaderboardPlacement(difficultyEntries, candidate);
     if (placement.qualifies) {
-      setLeaderboardEntriesForDifficulty(difficultyKey, placement.updated);
+      setLeaderboardEntriesForDifficulty(displayDifficulty, placement.updated);
       saveCachedLeaderboards(leaderboards);
     }
     rank = placement.rank;
     currentEntry = placement.candidateEntry;
+    const sortedForDisplay = placement ? placement.sorted : baselineEntries;
+    topEntries = sortedForDisplay.slice(0, 3);
   }
 
-  const displayDifficulty = ensureDifficulty(state.difficulty);
-  const baselineEntries = getLeaderboardEntriesForDifficulty(displayDifficulty);
-  const sortedForDisplay = placement ? placement.sorted : baselineEntries;
-  const topEntries = sortedForDisplay.slice(0, 3);
   renderPostGameLeaderboard(topEntries, currentEntry, rank, displayDifficulty);
 
   setUIState(UI_STATES.POSTGAME);
 
-  const initialMessage = buildGameOverMessage(state.score, rank, baseMessage);
+  let initialMessage = buildGameOverMessage(state.score, rank, baseMessage);
+  if (!recordScore) {
+    initialMessage += ' Testing mode results are not recorded.';
+  }
   showOverlay('Game Over', initialMessage, 'Continue', { buttonAction: 'postgame' });
 
-  if (candidate) {
+  if (recordScore && candidate) {
     submitLeaderboardEntry(candidate)
       .then((result) => {
         if (!result) {
@@ -1819,7 +2245,14 @@ function gameLoop(timestamp) {
 }
 
 function step() {
+  if (state.mode === 'practice') {
+    practiceCheckpoint = createPracticeCheckpoint(state) || practiceCheckpoint;
+  } else {
+    practiceCheckpoint = null;
+  }
+
   refreshPowerUpEffects();
+  tickPowerUpVisuals();
   updateActivePowerUps();
 
   if (state.bonus) {
@@ -1851,7 +2284,10 @@ function step() {
     }
   }
 
-  state.direction = state.nextDirection;
+  if (directionQueue.length > 0) {
+    state.nextDirection = cloneDirectionVector(directionQueue.shift());
+  }
+  state.direction = cloneDirectionVector(state.nextDirection);
   const newHead = {
     x: state.snake[0].x + state.direction.x,
     y: state.snake[0].y + state.direction.y,
@@ -1866,6 +2302,10 @@ function step() {
   let skipTailRemoval = false;
 
   if (collision.obstacleIndex !== -1 && !invincibleActive) {
+    if (state.mode === 'practice') {
+      handlePracticeCollision('obstacle');
+      return;
+    }
     endGame();
     return;
   }
@@ -1873,6 +2313,10 @@ function step() {
   if (collision.selfIndex !== -1) {
     const consumed = consumeTailShield();
     if (!consumed) {
+      if (state.mode === 'practice') {
+        handlePracticeCollision('self');
+        return;
+      }
       endGame();
       return;
     }
@@ -2138,8 +2582,27 @@ function drawPowerUps() {
 
 function drawSnake(interpolation) {
   ctx.save();
-  ctx.shadowBlur = 20;
-  ctx.shadowColor = 'rgba(255, 110, 196, 0.35)';
+  const effects = ensurePowerUpEffects(state);
+  const visuals = ensurePowerUpVisuals(state);
+  const invincibleActive = Boolean(effects['invincible'].active);
+  const tailCharges = effects['tail-cut'].charges || 0;
+  const tailShieldActive = tailCharges > 0 || visuals.tailShieldActive;
+  const invincibleFlash = !invincibleActive && visuals.invincibleFlashTimer > 0;
+  const tailShieldFlash = tailCharges === 0 && visuals.tailShieldFlashTimer > 0;
+
+  let shadowColor = 'rgba(255, 110, 196, 0.35)';
+  if (invincibleActive) {
+    shadowColor = 'rgba(112, 255, 169, 0.5)';
+  } else if (invincibleFlash) {
+    shadowColor = 'rgba(255, 120, 140, 0.45)';
+  } else if (tailShieldActive) {
+    shadowColor = 'rgba(255, 215, 99, 0.35)';
+  } else if (tailShieldFlash) {
+    shadowColor = 'rgba(255, 215, 99, 0.3)';
+  }
+
+  ctx.shadowBlur = invincibleActive ? 26 : 20;
+  ctx.shadowColor = shadowColor;
 
   for (let i = state.snake.length - 1; i >= 0; i -= 1) {
     const segment = state.snake[i];
@@ -2158,9 +2621,14 @@ function drawSnake(interpolation) {
     const y = drawY + padding;
 
     const gradient = ctx.createLinearGradient(x, y, x + size, y + size);
-    if (i === 0) {
-      gradient.addColorStop(0, 'rgba(255, 110, 196, 0.95)');
-      gradient.addColorStop(1, 'rgba(110, 245, 255, 0.95)');
+    if (invincibleActive) {
+      const alpha = i === 0 ? 0.98 : Math.max(0.45, 1 - i / 28);
+      gradient.addColorStop(0, `rgba(112, 255, 169, ${alpha})`);
+      gradient.addColorStop(1, `rgba(110, 245, 255, ${alpha})`);
+    } else if (invincibleFlash) {
+      const alpha = i === 0 ? 0.95 : Math.max(0.4, 1 - i / 24);
+      gradient.addColorStop(0, `rgba(255, 183, 0, ${alpha})`);
+      gradient.addColorStop(1, `rgba(255, 99, 132, ${alpha})`);
     } else {
       const alpha = Math.max(0.35, 1 - i / 25);
       gradient.addColorStop(0, `rgba(255, 110, 196, ${alpha})`);
@@ -2170,6 +2638,16 @@ function drawSnake(interpolation) {
     ctx.fillStyle = gradient;
     pathRoundedRect(ctx, x, y, size, size, i === 0 ? 10 : 8);
     ctx.fill();
+
+    if (tailShieldActive || tailShieldFlash) {
+      const strokeColor = tailShieldFlash
+        ? 'rgba(255, 215, 99, 0.55)'
+        : 'rgba(255, 215, 99, 0.85)';
+      ctx.lineWidth = Math.max(1.5, cellSize * 0.08);
+      ctx.strokeStyle = strokeColor;
+      pathRoundedRect(ctx, x, y, size, size, i === 0 ? 10 : 8);
+      ctx.stroke();
+    }
 
     if (i === 0) {
       drawEyes(x, y, size);
@@ -2201,18 +2679,24 @@ function isOppositeDirection(current, next) {
 }
 
 function setNextDirection(candidate) {
-  if (!candidate || uiState !== UI_STATES.RUNNING) {
+  if (!candidate || uiState !== UI_STATES.RUNNING || !state) {
     return;
   }
 
-  const currentHeading = state.nextDirection ?? state.direction;
-  const opposite =
-    state.snake.length > 1 && isOppositeDirection(currentHeading, candidate);
+  const lastHeading =
+    directionQueue.length > 0
+      ? directionQueue[directionQueue.length - 1]
+      : state.nextDirection ?? state.direction;
+  const opposite = state.snake.length > 1 && isOppositeDirection(lastHeading, candidate);
   if (opposite) {
     return;
   }
 
-  state.nextDirection = candidate;
+  if (lastHeading && lastHeading.x === candidate.x && lastHeading.y === candidate.y) {
+    return;
+  }
+
+  directionQueue.push(cloneDirectionVector(candidate));
 }
 
 function handleKeyDown(event) {
@@ -2253,13 +2737,113 @@ function handleKeyDown(event) {
 }
 
 function showOverlay(title, message, buttonLabel, options = {}) {
-  const { buttonAction = 'default', hideButton = false } = options;
+  const {
+    buttonAction = 'default',
+    hideButton = false,
+    secondaryLabel = '',
+    secondaryAction = 'secondary',
+    hideSecondaryButton = true,
+  } = options;
   overlayTitle.textContent = title;
   overlayMessage.textContent = message;
   overlayButton.textContent = buttonLabel;
   overlayButton.dataset.action = buttonAction;
   overlayButton.classList.toggle('hidden', hideButton);
+  if (overlaySecondaryButton) {
+    if (secondaryLabel) {
+      overlaySecondaryButton.textContent = secondaryLabel;
+    }
+    overlaySecondaryButton.dataset.action = secondaryAction;
+    const shouldHide = hideSecondaryButton || !secondaryLabel;
+    overlaySecondaryButton.classList.toggle('hidden', shouldHide);
+  }
   overlay.classList.remove('hidden');
+}
+
+function hideOverlay() {
+  overlay.classList.add('hidden');
+  if (overlaySecondaryButton) {
+    overlaySecondaryButton.classList.add('hidden');
+    overlaySecondaryButton.dataset.action = 'secondary';
+  }
+}
+
+function showPreRunOverlay() {
+  if (!state) {
+    return;
+  }
+  const mode = state.mode || settings.mode;
+  let message = 'Preview the field and note the obstacle layout before you begin.';
+  if (mode === 'practice') {
+    message =
+      'Preview the field, spot the starting obstacles, and remember that Practice mode lets you pause on mistakes.';
+  } else if (mode === 'testing') {
+    message =
+      'Your testing overrides are active. Inspect the setup, then begin the round when you are ready.';
+  }
+  showOverlay('Ready to Play?', message, 'Begin Round', {
+    buttonAction: 'start-run',
+    hideSecondaryButton: true,
+  });
+}
+
+function handleOverlayAction(action) {
+  switch (action) {
+    case 'resume':
+      pauseGame();
+      break;
+    case 'start-run':
+      hideOverlay();
+      startGame();
+      break;
+    case 'resume-practice':
+      resumePracticeRun();
+      break;
+    case 'reset-practice':
+      resetPracticeRun();
+      break;
+    case 'dismiss':
+    case 'postgame':
+    case 'secondary':
+    default:
+      hideOverlay();
+      break;
+  }
+}
+
+function registerTestingOverrideInput(input, key, { parser } = {}) {
+  if (!input) {
+    return;
+  }
+  const parse = typeof parser === 'function' ? parser : (value) => value;
+  const update = () => {
+    if (!settings.testingOverrides) {
+      settings.testingOverrides = {};
+    }
+    const raw = input.value.trim();
+    if (raw === '') {
+      settings.testingOverrides[key] = null;
+      return;
+    }
+    const numeric = Number.parseFloat(raw);
+    if (!Number.isFinite(numeric)) {
+      settings.testingOverrides[key] = null;
+      return;
+    }
+    settings.testingOverrides[key] = parse(numeric);
+    refreshTestingPreview();
+  };
+  input.addEventListener('input', update);
+  input.addEventListener('change', update);
+}
+
+function refreshTestingPreview() {
+  if (settings.mode !== 'testing') {
+    return;
+  }
+  if (state && !state.running) {
+    resetGame({ showIntroOverlay: false });
+  }
 }
 
 function pulseBoard() {
@@ -2343,13 +2927,13 @@ function handleSettingsSubmit(event) {
   }
   resetGame({ showIntroOverlay: false });
   setUIState(UI_STATES.RUNNING);
-  startGame();
+  showPreRunOverlay();
 }
 
 if (startButton) {
   startButton.addEventListener('click', () => {
     setUIState(UI_STATES.SETTINGS);
-    overlay.classList.add('hidden');
+    hideOverlay();
   });
 }
 
@@ -2357,7 +2941,7 @@ if (settingsBackButton) {
   settingsBackButton.addEventListener('click', () => {
     setUIState(UI_STATES.INTRO);
     resetGame({ showIntroOverlay: false });
-    overlay.classList.add('hidden');
+    hideOverlay();
   });
 }
 
@@ -2368,6 +2952,10 @@ if (settingsForm) {
 if (modeSelect) {
   modeSelect.addEventListener('change', () => {
     settings.mode = modeSelect.value;
+    updateTestingControlsVisibility();
+    if (state && !state.running) {
+      resetGame({ showIntroOverlay: false });
+    }
   });
 }
 
@@ -2376,13 +2964,19 @@ if (difficultySelect) {
     settings.difficulty = difficultySelect.value;
     updateDifficultyDescription();
     if (state && !state.running) {
-      state.difficulty = settings.difficulty;
-      applySettingsToState();
-      updateScoreboard();
+      resetGame({ showIntroOverlay: false });
     }
     setLeaderboardViewDifficulty('intro', settings.difficulty);
   });
 }
+
+registerTestingOverrideInput(testingSpeedInput, 'speedInterval');
+registerTestingOverrideInput(testingObstacleInput, 'obstacleCount');
+registerTestingOverrideInput(testingBonusChanceInput, 'bonusChance', {
+  parser: (value) => Math.max(0, Math.min(100, value)) / 100,
+});
+registerTestingOverrideInput(testingFruitPointsInput, 'fruitPoints');
+registerTestingOverrideInput(testingPowerUpLifetimeInput, 'powerUpLifetime');
 
 if (playerNameInput) {
   playerNameInput.addEventListener('input', (event) => {
@@ -2420,7 +3014,7 @@ if (playAgainButton) {
   playAgainButton.addEventListener('click', () => {
     setUIState(UI_STATES.SETTINGS);
     resetGame({ showIntroOverlay: false });
-    overlay.classList.add('hidden');
+    hideOverlay();
   });
 }
 
@@ -2430,12 +3024,15 @@ if (pauseButton) {
 
 overlayButton.addEventListener('click', () => {
   const action = overlayButton.dataset.action;
-  if (action === 'resume') {
-    pauseGame();
-    return;
-  }
-  overlay.classList.add('hidden');
+  handleOverlayAction(action);
 });
+
+if (overlaySecondaryButton) {
+  overlaySecondaryButton.addEventListener('click', () => {
+    const action = overlaySecondaryButton.dataset.action;
+    handleOverlayAction(action);
+  });
+}
 
 document.addEventListener('keydown', handleKeyDown, { passive: false });
 registerTouchControls();
